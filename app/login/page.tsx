@@ -29,7 +29,7 @@ export default function LoginPage() {
       setLoading(false);
     } else {
       // Re-route the authenticated session straight into the Control Panel dashboard
-      router.push("/control");
+      router.push("/dashboard");
     }
   };
 
@@ -37,7 +37,7 @@ export default function LoginPage() {
     <main className="w-screen h-screen flex items-center justify-center bg-zinc-950 text-white font-sans">
       <div className="w-full max-w-md p-8 space-y-6 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl">
         <div className="space-y-2 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Control Panel</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-zinc-400">Device 1 Admin Authentication</p>
         </div>
 

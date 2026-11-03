@@ -56,27 +56,34 @@ export default function ControlPage() {
   };
 
   // ================= STEP 3: THE SPLICING SELECTION ENGINE =================
-  const triggerStateDraw = () => {
-    if (!activePool || activePool.length === 0) return;
+ const triggerStateDraw = () => {
+  if (!activePool || activePool.length === 0) return;
 
-    // 1. Math-Bounded Random Index Generator
-    const randomIndex = Math.floor(Math.random() * activePool.length);
-    const updatedActivePool = [...activePool];
-    
-    // 2. O(1) Splicing Mutation: Removes the winning token object natively from browser memory
-    const [winningTicket] = updatedActivePool.splice(randomIndex, 1);
+  const randomIndex = Math.floor(Math.random() * activePool.length);
+  const updatedActivePool = [...activePool];
+  const [winningTicket] = updatedActivePool.splice(randomIndex, 1);
 
-    // 3. Commit mutations to layout state layers
-    setActivePool(updatedActivePool);
-    setHistoryPool((prevHistory) => [winningTicket, ...prevHistory]);
+  setActivePool(updatedActivePool);
+  setHistoryPool((prevHistory) => [winningTicket, ...prevHistory]);
 
-    // 4. Metric Sync Interceptor to Supabase (GDPR Enforced: Metadata integers only)
-    fetch("/api/stats", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ totalNames: updatedActivePool.length }),
-    }).catch((err) => console.error("Cloud logging pipeline skipped:", err));
-  };
+  // ================= STEP 4: WEBSOCKET BROADCAST TRANSMITTER =================
+  const { createClient } = require("@/lib/supabase/client");
+  const supabaseClient = createClient();
+
+  // Send a real-time signal out to the cloud room to synchronize open display windows
+  supabaseClient.channel("lucky-draw-room").send({
+    type: "broadcast",
+    event: "trigger-draw",
+    payload: { winnerName: winningTicket.participantName },
+  });
+  // ===========================================================================
+
+  fetch("/api/stats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ totalNames: updatedActivePool.length }),
+  }).catch((err) => console.error("Cloud logging pipeline skipped:", err));
+};
 
   // ================= STEP 3: HIGH-SPEED COORDINATE RE-MERGE =================
   const triggerPoolReset = () => {
