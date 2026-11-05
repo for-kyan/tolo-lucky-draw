@@ -1,22 +1,23 @@
 // types/draw.ts
 
 /**
- * Represents an individual ticket token inside the active drawing pool.
- * By mapping everything down to a ticket layout, we easily handle weighted entry options.
+ * Enforces the strict structural contract for a raffle token 
+ * within the localized in-browser sandbox state pools.
  */
 export interface RaffleTicket {
-  ticketId: string;       // Unique Primary Key (UUIDv4 generated in-browser)
-  participantName: string;// The parsed string name of the individual
-  attachedNumber?: number; // Optional number attached (e.g., ticket sequence / registration number)
-  entryIndex: number;     // Helps separate 'John Doe #1' from 'John Doe #2' in multi-entry formats
+  ticketId: string;          // Cryptographically secure unique tracker key (UUIDv4)
+  participantName: string;   // The string row value (Excel name OR generated Range Number)
+  attachedNumber?: number;   // Optional numerical index map (e.g. tracking row IDs)
+  entryIndex: number;        // Weighted multiplier key to separate duplicate entries cleanly
+  isNumericTicket?: boolean; // ◄── THE CORRECTION FIX: Flags if object was generated via integer range fields
 }
 
 /**
- * The master object structure representing an active ephemeral session pool.
+ * Enforces structure for the management directory rows tracker cache
  */
-export interface EphemeralRaffleSession {
-  roomId: string;          // The dynamic WebSocket channel code (e.g., ROOM-9921)
-  drawType: 'random-names' | 'random-numbers' | 'multiple-numbers' | 'multiple-entries';
-  activePool: RaffleTicket[]; // All tickets remaining inside the virtual pot
-  historyPool: RaffleTicket[];// Chronological stack of all pulled winning tickets
+export interface LocalDrawInstance {
+  id: string;
+  name: string;
+  drawType: string;
+  createdAt: string;
 }

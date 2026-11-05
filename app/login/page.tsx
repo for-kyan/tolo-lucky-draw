@@ -28,8 +28,8 @@ export default function LoginPage() {
       setErrorMsg(error.message);
       setLoading(false);
     } else {
-      // Re-route the authenticated session straight into the Control Panel dashboard
-      router.push("/dashboard");
+      // Enforce delivery directly to the newly structured management dashboard hub
+      router.push("/manage");
     }
   };
 
