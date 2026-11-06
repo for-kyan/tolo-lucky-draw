@@ -1,6 +1,3 @@
-// =============================================================================
-// [LINES 1-15: ARCHITECTURAL DEPENDENCY IMPORTS & DATA CONTRACT INTERFACES]
-// =============================================================================
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,9 +9,6 @@ export default function ManagePage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // =============================================================================
-  // [LINES 16-45: ROLE ARCHITECTURE & SYSTEM MEMORY STATE HOOKS]
-  // =============================================================================
   const [userRole, setUserRole] = useState<"admin" | "operator" | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -29,9 +23,7 @@ export default function ManagePage() {
   const [totalSystemDraws, setTotalSystemDraws] = useState<number>(0);
   const [activeOperatorsCount, setActiveOperatorsCount] = useState<number>(0);
 
-  // =============================================================================
-  // [LINES 46-85: SECURE SESSION FETCH & POSTGRESQL METRICS INTEGRATIONS]
-  // =============================================================================
+  // SECURE ACCOUNT PRIVILEGES LOADER & ANALYTICS PIPELINE
   useEffect(() => {
     const initializeManagementHub = async () => {
       try {
@@ -80,18 +72,15 @@ export default function ManagePage() {
     initializeManagementHub();
   }, [supabase, router]);
 
-  // =============================================================================
-  // [LINES 86-125: INSTANCE LIFECYCLE CREATION & GARBAGE COLLECTION TRIGGERS]
-  // =============================================================================
+  // INSTANCE CREATION, ENCRYPTION SPAWNING & LIFECYCLE PURGES
   const handleCreateDraw = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDrawName.trim()) return;
 
-    // ──> REFACTOR CRITERIA: DROPDOWNS REMOVED. THE DASHBOARD CONTROLS CONFIGURATIONS.
     const newInstance: LocalDrawInstance = {
       id: crypto.randomUUID(), 
       name: newDrawName.trim(),
-      drawType: "Pending Dynamic Selection", // Evaluated later inside the workspace dashboard
+      drawType: "Pending Dynamic Selection", 
       createdAt: new Date().toLocaleDateString(),
     };
 
@@ -106,7 +95,6 @@ export default function ManagePage() {
     setDraws(updatedDraws);
     localStorage.setItem("tolo_active_draws", JSON.stringify(updatedDraws));
     
-    // Wipe specific drawing sub-caches out of memory to protect device space
     localStorage.removeItem(`tolo_active_pool_${id}`);
     localStorage.removeItem(`tolo_history_pool_${id}`);
   };
@@ -147,17 +135,14 @@ export default function ManagePage() {
       </div>
     );
   }
-  // =============================================================================
-// [LINES 126-250: USER INTERFACE LAYOUT GRAPHICS COMPONENT RENDERING]
-// =============================================================================
   return (
     <main className="w-screen h-screen flex bg-zinc-950 text-white font-sans overflow-hidden">
       
-      {/* CONTROL BANNER CONSOLE (LEFT LAYOUT SIDEBAR) */}
+      {/* SIDEBAR CONSOLE AREA */}
       <section className="w-96 p-8 border-r border-zinc-900 bg-zinc-900/20 space-y-6 overflow-y-auto flex flex-col justify-between">
         <div className="space-y-6">
           <div>
-            <h1 className="text-xl font-black tracking-tight text-amber-400">DRAW CONTROL HUB</h1>
+            <h1 className="text-xl font-black tracking-tight text-amber-400">EVENT CONTROL HUB</h1>
             <p className="text-xs text-zinc-500 mt-0.5 font-mono truncate">Logged In: {userEmail}</p>
           </div>
 
@@ -195,7 +180,6 @@ export default function ManagePage() {
               </form>
             </div>
           ) : (
-            /* CRUCIAL NOTE: THIS IS THE COMPONENT REFERRED TO FOR REMOVAL BEFORE FINAL DEPLOYMENT */
             <div className="space-y-6">
               <div className="bg-zinc-950 p-5 border border-zinc-800 rounded-xl space-y-4">
                 <div className="flex justify-between items-center">
@@ -213,62 +197,59 @@ export default function ManagePage() {
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-zinc-500">Leak Prevention Guard:</span>
-                    <span className="font-mono text-emerald-400 font-bold">ACTIVE</span>
+                    <span className="font-mono text-emerald-400 font-bold">READY</span>
                   </div>
                 </div>
               </div>
               <p className="text-[11px] text-zinc-500 leading-relaxed bg-zinc-950/40 p-4 border border-zinc-900 rounded-xl">
-                Notice: Delete drawing spaces when your Draw finishes to instantly free up internal browser memory footprint.
+                Notice: Delete drawing spaces when your event finishes to instantly free up internal browser memory footprint.
               </p>
             </div>
           )}
         </div>
 
-        {/* Global Security Shutdown Actions Cluster */}
+        {/* UNIVERSAL OPERATOR LOGOUT HOOK CLUSTER */}
         <div className="pt-4 border-t border-zinc-900 flex flex-col gap-2">
           <div className="text-[10px] text-zinc-600 font-mono tracking-wider">
             AUTHORITY_LEVEL: {userRole?.toUpperCase()}
           </div>
           <button
             onClick={handleGlobalSystemSignOut}
-            className="w-full py-2 bg-zinc-950 border border-zinc-900 hover:border-red-500/30 text-zinc-500 hover:text-red-400 text-xs font-bold rounded-lg transition-all cursor-pointer font-mono"
+            className="w-full py-2 bg-zinc-950 border border-zinc-900 hover:border-red-500/30 text-zinc-500 hover:text-red-400 text-xs font-bold rounded-lg transition-all cursor-pointer font-mono text-white"
           >
             DISCONNECT_SESSION_LOGOUT
           </button>
         </div>
       </section>
 
-      {/* EVENTS DIRECTORY REGISTRY CONTAINER (RIGHT PANEL) */}
+      {/* DRAWS DIRECTORY REGISTRY */}
       <section className="flex-1 p-8 space-y-6 overflow-y-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h2 className="text-2xl font-extrabold tracking-tight">Active Draw Directory</h2>
-            <p className="text-sm text-zinc-400 mt-0.5">Initialize a blank event draw  below to begin configurations.</p>
+            <h2 className="text-2xl font-extrabold tracking-tight">Active Draws Directory</h2>
+            <p className="text-sm text-zinc-400 mt-0.5">Initialize a blank raffle below to begin configurations.</p>
           </div>
           
-          {/* Streamlined Create Draw Input Header Form */}
           <form onSubmit={handleCreateDraw} className="flex gap-2 w-full md:w-auto">
             <input 
               type="text" required value={newDrawName} onChange={(e) => setNewDrawName(e.target.value)}
               className="px-4 py-2 bg-zinc-900 border border-zinc-800 focus:border-amber-500 rounded-xl focus:outline-none text-sm text-white min-w-[260px] flex-1 md:flex-none"
-              placeholder="e.g. Corporate Gala Lucky Draw"
+              placeholder="e.g. Corporate Gala Draw"
             />
-            <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-zinc-950 text-sm font-extrabold rounded-xl transition-colors cursor-pointer whitespace-nowrap">
+            <button type="submit" className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-zinc-950 text-sm font-extrabold rounded-xl transition-colors cursor-pointer whitespace-nowrap">
               Create New Draw
             </button>
           </form>
         </div>
 
-        {/* Dynamic Directory List Table Section */}
         {!draws || draws.length === 0 ? (
-          /* Elegant Onboarding Blank State Layout */
           <div className="w-full h-[60vh] border border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-center p-8 bg-zinc-900/5">
             <div className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-500 font-bold mb-3 border border-zinc-800">0</div>
             <h3 className="text-base font-bold text-zinc-300">No active draws found</h3>
             <p className="text-xs text-zinc-500 max-w-sm mt-1">Type a name in the box above to generate an isolated, secure workspace instance.</p>
           </div>
         ) : (
-          /* Interactive Shared Data Grid List Layout (Relabeled for Non-Tech Users) */
+          /* ──> REFACTOR CRITERIA: LABELS TRANSLATED FOR NON-TECH SAVVY EVENT USERS WITH CENTERED ACTIONS GRID */
           <div className="border border-zinc-900 bg-zinc-900/10 rounded-2xl overflow-hidden shadow-2xl">
             <table className="w-full border-collapse text-left text-sm">
               <thead className="bg-zinc-900 text-zinc-400 text-xs font-bold uppercase tracking-wider border-b border-zinc-800">
@@ -276,7 +257,7 @@ export default function ManagePage() {
                   <th className="p-4">Active Draw Title</th>
                   <th className="p-4">Secure Channel Code</th>
                   <th className="p-4">Created Date</th>
-                  <th className="p-4 text-right">Actions</th>
+                  <th className="p-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900 font-medium">
@@ -285,16 +266,16 @@ export default function ManagePage() {
                     <td className="p-4 text-white font-bold">{draw.name}</td>
                     <td className="p-4 text-zinc-500 font-mono text-xs">{draw.id}</td>
                     <td className="p-4 text-zinc-400 text-xs">{draw.createdAt}</td>
-                    <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                    <td className="p-4 text-center space-x-2 whitespace-nowrap">
                       <button 
                         onClick={() => router.push(`/dashboard/${draw.id}`)}
-                        className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 hover:border-amber-500/50 hover:bg-amber-500/5 text-amber-400 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                        className="px-4 py-1.5 bg-zinc-900 border border-zinc-800 hover:border-amber-500/50 hover:bg-amber-500/5 text-amber-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
                       >
                         Open Workspace
                       </button>
                       <button 
                         onClick={() => handleDeleteDraw(draw.id)}
-                        className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 hover:border-red-500/30 hover:bg-red-500/5 text-zinc-500 hover:text-red-400 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                        className="px-4 py-1.5 bg-zinc-900 border border-zinc-800 hover:border-red-500/30 hover:bg-red-500/5 text-zinc-500 hover:text-red-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
                       >
                         Delete
                       </button>

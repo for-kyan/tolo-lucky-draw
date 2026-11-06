@@ -1,11 +1,9 @@
-// =============================================================================
-// [LINES 1-35: RECTIFIED COMPONENT ENGINE LOGIC & BROADCST CONTRACT HOOKS]
-// =============================================================================
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { LOCALES, SupportedLocale } from "@/constants/locales";
 
 interface BroadcastPayload {
   winnerName: string;
@@ -13,68 +11,78 @@ interface BroadcastPayload {
   themeFont: string;
   themeAnim: string;
   textColor: string;
+  localeCode: SupportedLocale;
 }
 
-export default function DisplayPage() {
+function DisplayContent() {
   const params = useParams();
   const drawId = params.drawId as string;
   const supabase = createClient();
 
   // Passive Aesthetics Display Rendering States
-  const [winnerName, setWinnerName] = useState<string>("Awaiting Draw Order...");
+  const [winnerName, setWinnerName] = useState<string>("");
   const [remoteBgImage, setRemoteBgImage] = useState<string | null>(null);
   const [currentFont, setCurrentFont] = useState<string>("Inter");
   const [currentAnim, setCurrentAnim] = useState<string>("anim-shuffle");
   const [customHexColor, setCustomHexColor] = useState<string>("#fbbf24");
+  const [glitchActive, setGlitchActive] = useState<boolean>(false);
   
   const [isAnimating, setIsAnimating] = useState<boolean>(false);
+  const [activeLang, setActiveLang] = useState<SupportedLocale>("en");
   const [displayTarget, setDisplayTarget] = useState<string>("Awaiting Draw Order...");
 
-  const SHUFFLE_PLACEHOLDERS = [
-    "Selecting Winner...", "Processing Tokens...", "Analyzing Entries...",
-    "Parsing Metadata...", "Evaluating Weights...", "Calculating Index..."
-  ];
+  const SHUFFLE_PLACEHOLDERS: Record<SupportedLocale, string[]> = {
+    en: ["Selecting Winner...", "Processing Tokens...", "Analyzing Entries..."],
+    es: ["Seleccionando Ganador...", "Procesando Fichas...", "Analizando Entradas..."],
+    fr: ["Sélection du Gagnant...", "Traitement des Jetons...", "Analyse des Entrées..."],
+    ar: ["جاري اختيار الفائز...", "جاري معالجة البيانات...", "جاري تحليل السحب..."],
+    zh: ["正在篩選獲勝者...", "正在處理數據代幣...", "正在分析抽獎名單..."],
+  };
 
-  // =============================================================================
-  // [LINES 36-105: GOOGLE CDN WEB FONT SHEET LOADER & WEBSOCKET ENGINE]
-  // =============================================================================
   useEffect(() => {
-    // Subscribe to the isolated WebSocket sub-channel matching your drawId Primary Key string
+    setDisplayTarget(LOCALES[activeLang].awaitingDraw);
+    setWinnerName(LOCALES[activeLang].awaitingDraw);
+  }, [activeLang]);
+
+  useEffect(() => {
     const channel = supabase
       .channel(`lucky-draw-room:${drawId}`)
       .on("broadcast", { event: "trigger-draw" }, (payload) => {
         const data = payload.payload as BroadcastPayload;
+        const lang = data.localeCode || "en";
 
+        setActiveLang(lang);
         setRemoteBgImage(data.themeBgImage);
         setCurrentFont(data.themeFont);
         setCurrentAnim(data.themeAnim);
         setWinnerName(data.winnerName);
         setCustomHexColor(data.textColor || "#fbbf24");
 
-        // ──> TECHNICAL CORRECTION FIX: DYNAMIC GOOGLE FONTS CDN API CONNECTION INJECTION LOOPS
+        // DYNAMIC GOOGLE FONTS INJECTION CORE FIX
         if (data.themeFont && data.themeFont.trim() !== "") {
           const fontCleanName = data.themeFont.trim();
           const formattedFontName = fontCleanName.replace(/\s+/g, "+");
           const linkId = `google-font-${formattedFontName.toLowerCase()}`;
-          const existingLink = document.getElementById(linkId);
           
-          if (!existingLink) {
+          if (!document.getElementById(linkId)) {
             const linkElement = document.createElement("link");
             linkElement.id = linkId;
             linkElement.rel = "stylesheet";
-            // Corrected url layout mapping including mandatory '?family=' parameter constraints
-            linkElement.href = `https://googleapis.com{formattedFontName}:wght@400;700;900&display=swap`;
+            linkElement.href = `https://googleapis.com{formattedFontName}&display=swap`;
             document.head.appendChild(linkElement);
           }
         }
 
-        // Fire up the selected animation velocity mechanics
         setIsAnimating(true);
+        setGlitchActive(false);
 
+        const currentPool = SHUFFLE_PLACEHOLDERS[lang];
+
+        // FIVE-TIER VELOCITY ANIMATION MATRICES ENGINE
         if (data.themeAnim === "anim-shuffle") {
           let cycles = 0;
           const interval = setInterval(() => {
-            setDisplayTarget(SHUFFLE_PLACEHOLDERS[Math.floor(Math.random() * SHUFFLE_PLACEHOLDERS.length)]);
+            setDisplayTarget(currentPool[Math.floor(Math.random() * currentPool.length)]);
             cycles++;
             if (cycles > 12) {
               clearInterval(interval);
@@ -93,19 +101,34 @@ export default function DisplayPage() {
               setDisplayTarget(data.winnerName);
             }
           }, 80);
+        } else if (data.themeAnim === "anim-glitch") {
+          setGlitchActive(true);
+          let cycles = 0;
+          const interval = setInterval(() => {
+            setDisplayTarget(Math.random().toString(36).substring(2, 10).toUpperCase());
+            cycles++;
+            if (cycles > 10) {
+              clearInterval(interval);
+              setGlitchActive(false);
+              setIsAnimating(false);
+              setDisplayTarget(data.winnerName);
+            }
+          }, 70);
         } else {
-          // Instant Clean Fade-In Reveal (Bypass rolling placeholders)
           setIsAnimating(false);
           setDisplayTarget(data.winnerName);
         }
       })
-      .on("broadcast", { event: "reset-draw" }, () => {
-    // ──> NEW: Wipes canvas layout parameters back to sterile standby metrics instantly
-    setWinnerName("Awaiting Draw Order...");
-    setDisplayTarget("Awaiting Draw Order...");
-    setRemoteBgImage(null);
-    setIsAnimating(false);
-  })
+      .on("broadcast", { event: "reset-draw" }, (payload) => {
+        const data = payload?.payload as { localeCode?: SupportedLocale };
+        const lang = data?.localeCode || "en";
+        setActiveLang(lang);
+        setWinnerName(LOCALES[lang].awaitingDraw);
+        setDisplayTarget(LOCALES[lang].awaitingDraw);
+        setRemoteBgImage(null);
+        setIsAnimating(false);
+        setGlitchActive(false);
+      })
       .subscribe();
 
     return () => {
@@ -113,48 +136,49 @@ export default function DisplayPage() {
     };
   }, [drawId, supabase]);
 
-  // =============================================================================
-  // [LINES 106-165: RESOLUTION INDEPENDENT ELASITIC CANVAS FRAME RENDER]
-  // =============================================================================
   return (
     <main 
-      style={{ fontFamily: `'${currentFont}', sans-serif` }}
+      style={{ fontFamily: `'${currentFont}', sans-serif` }} 
       className="w-screen h-screen flex flex-col items-center justify-center p-12 overflow-hidden select-none relative bg-zinc-950 text-white"
     >
       
-      {/* ──> ADVANCED INTERFACE FIX: FIXED COVER CONFIGURATION FOR ABSOLUTE RESPONSIVE PROPORTIONS */}
+      {/* VLC-STYLE ASPECT RATIO FILL SCALING FIX */}
       {remoteBgImage ? (
-        <div 
-          style={{ backgroundImage: `url(${remoteBgImage})` }} 
-          className="fixed inset-0 bg-cover bg-center bg-no-repeat w-full h-full z-0 transition-all duration-700 object-cover"
+        <img 
+          src={remoteBgImage} 
+          alt="VLC-Style Fill Backdrop" 
+          className="fixed inset-0 w-screen h-screen object-fill select-none pointer-events-none z-0 transition-all duration-700 animate-fade-in" 
         />
       ) : (
         <div className="absolute w-[40vw] h-[40vw] rounded-full filter blur-[150px] opacity-10 bg-amber-500 top-1/4 left-1/4 animate-pulse pointer-events-none z-0" />
       )}
 
-      {/* VIEWPORT CONTRAST GLASS BOUNDARY FRAME CONTAINER */}
+      {/* RESOLUTION INDEPENDENT OVERLAY DISPLAY CORE */}
       <div className="w-full max-w-[90vw] h-[65vh] rounded-[2.5rem] border border-white/5 bg-black/40 backdrop-blur-3xl flex flex-col items-center justify-center p-8 relative shadow-[0_0_120px_rgba(0,0,0,0.7)] z-10">
-        
-        <div className={`absolute inset-0 border-2 rounded-[2.5rem] pointer-events-none transition-all duration-500 ${
-          isAnimating ? "border-white/20 shadow-[inset_0_0_60px_rgba(255,255,255,0.03)]" : "border-white/0"
-        }`} />
-
+        <div className={`absolute inset-0 border-2 rounded-[2.5rem] pointer-events-none transition-all duration-500 ${isAnimating ? "border-white/20 shadow-[inset_0_0_60px_rgba(255,255,255,0.03)]" : "border-white/0"}`} />
         <div className="text-center w-full max-w-[85vw] overflow-hidden px-4">
           <span 
-            style={{ color: isAnimating ? "#71717a" : customHexColor }}
+            style={{ color: isAnimating ? "#71717a" : customHexColor }} 
             className={`block text-[8vw] font-black leading-none tracking-tight transition-all duration-300 transform-gpu ${
-              isAnimating 
-                ? "scale-95 blur-[4px]" 
-                : winnerName !== "Awaiting Draw Order..."
-                  ? "drop-shadow-[0_0_50px_rgba(0,0,0,0.6)] scale-100 animate-fade-in" 
-                  : "text-zinc-600 scale-100"
+              glitchActive ? "skew-x-12 scale-y-75 blur-[1px] text-red-500" : ""
+            } ${
+              !isAnimating && currentAnim === "anim-zoom-pop" && winnerName !== LOCALES[activeLang].awaitingDraw ? "animate-[ping_0.4s_ease-out_1] scale-100" : ""
+            } ${
+              isAnimating ? "scale-95 blur-[4px]" : "scale-100"
             }`}
           >
             {displayTarget}
           </span>
         </div>
-
       </div>
     </main>
+  );
+}
+
+export default function DisplayPage() {
+  return (
+    <Suspense fallback={<div className="w-screen h-screen flex items-center justify-center bg-zinc-950 text-zinc-500 font-mono text-xs animate-pulse">CONNECTING_LIVE_PRESENTATION_CANVAS...</div>}>
+      <DisplayContent />
+    </Suspense>
   );
 }
