@@ -36,13 +36,47 @@ function DisplayContent() {
     es: ["Seleccionando Ganador...", "Procesando Fichas...", "Analizando Entradas..."],
     fr: ["Sélection du Gagnant...", "Traitement des Jetons...", "Analyse des Entrées..."],
     ar: ["جاري اختيار الفائز...", "جاري معالجة البيانات...", "جاري تحليل السحب..."],
-    zh: ["正在篩選獲勝者...", "正在處理數據代幣...", "正在分析抽獎名單..."],
+    zh: ["正在篩選獲勝者...", "正在處理數據代幣...", "正在分析抽獎名单..."],
   };
 
   useEffect(() => {
     setDisplayTarget(LOCALES[activeLang].awaitingDraw);
     setWinnerName(LOCALES[activeLang].awaitingDraw);
   }, [activeLang]);
+
+  // RUNTIME GOOGLE FONTS SYNC ENFORCER (CASE-SENSITIVE API PATCH & TITLE CASING FIX)
+  useEffect(() => {
+    if (!currentFont || currentFont.trim() === "") return;
+
+    // Preserve the exact casing (e.g., "Cinzel", "Playfair Display", "Bungee Spice")
+    const fontCleanName = currentFont.trim();
+    
+    // Capitalize words cleanly to ensure single-weight fonts like Bungee Spice resolve properly
+    const titleCasedFont = fontCleanName
+      .split(" ")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+
+    const formattedFontName = titleCasedFont.replace(/\s+/g, "+");
+    
+    // Lowercase is ONLY used here for the HTML element ID attribute
+    const linkId = "google-font-link-" + formattedFontName.toLowerCase();
+    
+    let linkElement = document.getElementById(linkId) as HTMLLinkElement;
+    if (!linkElement) {
+      linkElement = document.createElement("link");
+      linkElement.id = linkId;
+      linkElement.rel = "stylesheet";
+      
+      // CASE-SENSITIVE PATH PINNING: Supports standard and custom display fonts out of the box
+      linkElement.href = "https://fonts.googleapis.com/css2?family=" + formattedFontName + "&display=swap";
+      
+      document.head.appendChild(linkElement);
+    }
+
+    // Force style re-evaluation across the entire viewport document tree
+    document.documentElement.style.setProperty("--event-display-font", "'" + titleCasedFont + "', sans-serif");
+  }, [currentFont]);
 
   useEffect(() => {
     const channel = supabase
@@ -57,21 +91,6 @@ function DisplayContent() {
         setCurrentAnim(data.themeAnim);
         setWinnerName(data.winnerName);
         setCustomHexColor(data.textColor || "#fbbf24");
-
-        // DYNAMIC GOOGLE FONTS INJECTION CORE FIX
-        if (data.themeFont && data.themeFont.trim() !== "") {
-          const fontCleanName = data.themeFont.trim();
-          const formattedFontName = fontCleanName.replace(/\s+/g, "+");
-          const linkId = `google-font-${formattedFontName.toLowerCase()}`;
-          
-          if (!document.getElementById(linkId)) {
-            const linkElement = document.createElement("link");
-            linkElement.id = linkId;
-            linkElement.rel = "stylesheet";
-            linkElement.href = `https://googleapis.com{formattedFontName}&display=swap`;
-            document.head.appendChild(linkElement);
-          }
-        }
 
         setIsAnimating(true);
         setGlitchActive(false);
@@ -137,11 +156,10 @@ function DisplayContent() {
   }, [drawId, supabase]);
 
   return (
-    <main 
-      style={{ fontFamily: `'${currentFont}', sans-serif` }} 
+    <main
+      style={{ fontFamily: "var(--event-display-font, system-ui, sans-serif)" }} 
       className="w-screen h-screen flex flex-col items-center justify-center p-12 overflow-hidden select-none relative bg-zinc-950 text-white"
     >
-      
       {/* VLC-STYLE ASPECT RATIO FILL SCALING FIX */}
       {remoteBgImage ? (
         <img 
@@ -158,7 +176,11 @@ function DisplayContent() {
         <div className={`absolute inset-0 border-2 rounded-[2.5rem] pointer-events-none transition-all duration-500 ${isAnimating ? "border-white/20 shadow-[inset_0_0_60px_rgba(255,255,255,0.03)]" : "border-white/0"}`} />
         <div className="text-center w-full max-w-[85vw] overflow-hidden px-4">
           <span 
-            style={{ color: isAnimating ? "#71717a" : customHexColor }} 
+            // ✅ INHERIT FORCED TYPOGRAPHY: Cascades the variable explicitly down to shuffling placeholders
+            style={{ 
+              color: isAnimating ? "#71717a" : customHexColor,
+              fontFamily: "var(--event-display-font, inherit)"
+            }} 
             className={`block text-[8vw] font-black leading-none tracking-tight transition-all duration-300 transform-gpu ${
               glitchActive ? "skew-x-12 scale-y-75 blur-[1px] text-red-500" : ""
             } ${

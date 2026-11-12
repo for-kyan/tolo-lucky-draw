@@ -101,18 +101,48 @@ function DashboardContent() {
   };
 
   // In-Browser SheetJS Reader with Advanced Dynamic Auto-Detector Logic
+    // In-Browser SheetJS Reader with Advanced Structural Schema Verification Loops
   const handleSpreadsheetIngestion = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadedFileName(file.name);
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
         const data = new Uint8Array(event.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0]; // Fixes type index error
+        const firstSheetName = workbook.SheetNames[0]; 
         const worksheet = workbook.Sheets[firstSheetName];
         const rawRows = XLSX.utils.sheet_to_json<any>(worksheet);
+
+        // ──> CRITICAL DATA PROTECTION SUB-SYSTEM: EMPTY WORKBOOK CHECK
+        if (!rawRows || rawRows.length === 0) {
+          alert("Data Ingestion Error: The uploaded spreadsheet appears to be completely empty.");
+          e.target.value = ""; // Clear file slot buffer instantly
+          setUploadedFileName(null);
+          return;
+        }
+
+        // ──> STRUCTURAL SCHEMA VALIDATOR MODULE
+        // Extracts the raw column property keys from the very first data row entry
+        const sampleRowKeys = Object.keys(rawRows[0]);
+        const hasValidNameColumn = sampleRowKeys.some(key => 
+          ["name", "participant"].includes(key.toLowerCase().trim())
+        );
+
+        if (!hasValidNameColumn) {
+          alert(
+            "Spreadsheet Schema Mismatch! Ingestion Halted.\n\n" +
+            "Your file must contain a column header labeled exactly 'Name' or 'Participant' so the system can map contestant tokens successfully.\n\n" +
+            "Click the download links above to pull down a pre-formatted blueprint template sheet."
+          );
+          e.target.value = ""; // Clear file slot buffer instantly
+          setUploadedFileName(null);
+          return;
+        }
+
+        // If the schema verification passes perfectly, proceed to parse the token allocations
+        setUploadedFileName(file.name);
         const parsedTickets: RaffleTicket[] = [];
         let foundValidTicketIdentifiers = false;
 
@@ -159,11 +189,13 @@ function DashboardContent() {
         setActivePool(parsedTickets);
         setHistoryPool([]);
       } catch (error) {
-        console.error(error);
+        console.error("Local client binary parsing validation exception:", error);
+        alert("Critical Error: Failed to process the spreadsheet data binary stream.");
       }
     };
     reader.readAsArrayBuffer(file);
   };
+
 
   const handleGenerateNumericRange = (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,6 +319,7 @@ function DashboardContent() {
         </div>
 
         {/* STEP 2 */}
+                {/* STEP 2 DESIGN INTEGRATION BLOCK */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
           {drawType === "random-numbers" ? (
             <form onSubmit={handleGenerateNumericRange} className="space-y-4">
@@ -309,7 +342,10 @@ function DashboardContent() {
                 </div>
               </div>
               <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-zinc-800 hover:border-amber-500/40 rounded-xl cursor-pointer bg-zinc-950/50 transition-all">
-                <span className="text-sm text-zinc-400">{uploadedFileName ? <span className="text-amber-400 font-bold">{uploadedFileName}</span> : "Load Names List (.xlsx)"}</span>
+                {/* ──> THE VERIFICATION REMAP: Automatically toggles string based on validator updates */}
+                <span className="text-sm text-zinc-400">
+                  {uploadedFileName ? <span className="text-amber-400 font-bold">{uploadedFileName}</span> : "Load Names List (.xlsx)"}
+                </span>
                 <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleSpreadsheetIngestion} />
               </label>
             </div>
