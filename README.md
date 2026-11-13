@@ -1,110 +1,128 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# TSDS (Tolo Studio Draw System) — Ephemeral Live Raffle & Event Broadcast System
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+**TSDS** is a privacy-first, real-time lucky draw and raffle presentation platform built for live events. Participant lists are processed strictly in client-side browser memory (RAM) with zero server-side retention of entrant PII, while winner reveals and live display styling sync instantaneously across stage screens via WebSockets.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+---
 
-## Features
+## Devlopment History and Choice Rationale
+This project was built with the assistance of the publicily accessible version of Google Gemini. The developer prior to this project had experience in some js, php, SQL, java and C languages. However this project as much as was about building the software, served as a learning process to understand this new world of AI assisted coding whichnow exists and as a way to better understand next/react .js , postgres as well as using them in such a tech stack with github, vercel and supabase. Forgive the clunky nature of learning, but its a journey we must all travel. Best practices were kept in mind and adherence was attempted. I hope this project can provide any viewwers with some insight and entertainment.
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Proxy
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+It Should be kept in mind, while the AI was benefical, it made errors and due to security (I assume) certain symbols where hardcoded to not display in the output, breaking the code in cases. This little code project still required some old fashioned debugging and tracing, perhaps I missed a new tool, its entirely possible.
 
-## Demo
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+## Core Architecture & Privacy Model
 
-## Deploy to Vercel
+Unlike traditional raffle tools that store participant spreadsheets in cloud databases, TSDS enforces an **ephemeral data architecture**:
 
-Vercel deployment will guide you through creating a Supabase account and project.
+* **Zero-Retention Participant Data:** Uploaded Excel spreadsheets (`.xlsx`, `.xls`) and generated numeric pools live exclusively inside the operator's browser session memory. Closing the workspace, deleting the draw, or signing out permanently purges all entrant data.
+* **Real-Time Multi-Screen Broadcasts:** Powered by **Supabase Realtime Broadcast channels** (`lucky-draw-room:<drawId>`), a single operator console can drive multiple passive 4K display screens simultaneously with sub-second latency.
+* **Role-Based Access Control:** **Supabase Auth** and PostgreSQL handle user verification (`admin` vs. `operator` roles) and anonymous system-wide draw usage metrics without ever touching participant names.
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
-
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
-
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
-
-## Clone and run locally
-
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
-
-2. Create a Next.js app using the Supabase Starter template npx command
-
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
-
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
-
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
-
-3. Use `cd` to change into the app's directory
-
-   ```bash
-   cd with-supabase-app
-   ```
-
-4. Rename `.env.example` to `.env.local` and update the following:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
+```text
+┌──────────────────────────────────────────────────────────┐
+│                  Vercel Edge / Cloud                     │
+│               Next.js App Router (TypeScript)            │
+└────────────────────────────┬─────────────────────────────┘
+                             │
+             ┌───────────────┴───────────────┐
+             ▼                               ▼
+┌─────────────────────────┐     ┌──────────────────────────┐
+│   Supabase Auth & DB    │     │ Supabase Realtime Socket │
+│ (User Roles & Metadata) │     │ (Ephemeral Broadcasts)   │
+└─────────────────────────┘     └────────────┬─────────────┘
+                                             │
+                       ┌─────────────────────┼─────────────────────┐
+                       ▼                     ▼                     ▼
+            ┌────────────────────┐ ┌───────────────────┐ ┌───────────────────┐
+            │  Operator Console  │ │  Stage Display 1  │ │  Stage Display 2  │
+            │  (/dashboard/[id]) │ │  (/display/[id])  │ │  (/display/[id])  │
+            │  • Client RAM Pool │ │  • Passive View   │ │  • Passive View   │
+            │  • Live Styling    │ │  • Google Fonts   │ │  • 5 Animations   │
+            └────────────────────┘ └───────────────────┘ └───────────────────┘
 ```
 
-> [!NOTE]
-> This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
-> Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.
-> See the [full announcement](https://github.com/orgs/supabase/discussions/29260) for more information.
+---
 
-Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+## Key Features
 
-5. You can now run the Next.js local development server:
+* **Flexible Entry Ingestion (`SheetJS`):**
+  * **Standard Names List:** Single-entry participant rows with optional ticket numbers.
+  * **Weighted Entries:** Supports entry multipliers (`Entries` / `Weight`) or sequential ticket ranges (e.g., `1-150`).
+  * **Numbers Generator:** Instant in-memory numeric pool generation between custom start/end bounds.
+  * **Optional Extra Column:** Automatically detects an additional spreadsheet column (e.g., `Subtitle`, `Department`, `Prize`, `Table`) and displays it above or below the main reveal.
+* **Live Stage Display Customization:**
+  * Dynamic **Google Fonts** loading by font family name.
+  * Real-time **Font Size (`+` / `-`)** scaling with viewport-safe text wrapping.
+  * Custom **Backdrop Image** upload with adjustable **Background Blur (`0px–24px`)**.
+  * Toggleable **Frosted Glass Card (`Font Background`)** and custom hex text colors.
+  * **Screen Position Offset:** Pin winner reveals to the **Top Third**, **Middle Third**, or **Bottom Third** of the screen to avoid stage logos or lower-thirds graphics.
+  * **5 Reveal Animations:** *Rolling Shuffle*, *Slot Machine Spin*, *Clean Fade-In*, *Zoom-Pop*, and *Matrix RGB Glitch*.
+* **Multi-Language Support:** Built-in localization for **English (`EN`)**, **Spanish (`ES`)**, **French (`FR`)**, **Arabic (`AR`)**, and **Traditional Chinese (`ZH`)**.
 
-   ```bash
-   npm run dev
-   ```
+---
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+## Tech Stack
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+* **Framework:** Next.js (App Router) with React & TypeScript
+* **Styling:** Tailwind CSS
+* **Authentication & Realtime:** Supabase (`@supabase/supabase-js`)
+* **Spreadsheet Parsing:** SheetJS (`xlsx`)
+* **Hosting:** Vercel
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
+---
 
-## Feedback and issues
+## Project Structure
 
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
+```text
+├── app/
+│   ├── login/                 # Supabase authentication entry
+│   ├── manage/                # Role-based workspace directory & admin console
+│   ├── dashboard/[drawId]/    # Operator control panel & live aesthetics studio
+│   └── display/[drawId]/      # Passive public stage screen receiver
+├── components/
+│   ├── dashboard/             # AestheticsPanel & DrawHistorySidebar
+│   ├── manage/                # AdminSidebar (stats & operator provisioning)
+│   ├── shared/                # SignOutButton & LocaleSelector
+│   └── ui/                    # Base UI primitives
+├── constants/
+│   └── locales.ts             # Multi-language UI & display dictionaries
+├── lib/
+│   └── supabase/              # Browser & server Supabase client helpers
+└── types/
+    └── draw.ts                # Shared RaffleTicket & DisplayAesthetics contracts
+```
 
-## More Supabase examples
+---
 
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+## Local Development Setup
+
+### 1. Prerequisites
+* Node.js `18.18+` or `20+`
+* A configured [Supabase](https://supabase.com) project with Authentication enabled and `profiles` / `draw_usage_stats` tables created.
+
+### 2. Install Dependencies
+```bash
+npm install
+```
+
+### 3. Configure Environment Variables
+Create a `.env.local` file in the project root:
+```env
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+### 4. Run the Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## Deployment
+
+Tolo Draw is configured for deployment on **Vercel**:
+1. Push the repository to GitHub/GitLab/Bitbucket.
+2. Import the project into Vercel and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` under **Project Settings → Environment Variables**.
+3. Attach your custom domain in Vercel and add both the production domain and Vercel preview URLs to **Supabase → Authentication → URL Configuration**.

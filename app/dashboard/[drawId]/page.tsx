@@ -1,57 +1,62 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { RaffleTicket } from "@/types/draw";
-import { SupportedLocale, LOCALES } from "@/constants/locales";
 import { RealtimeChannel } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
+import {
+  RaffleTicket,
+  DisplayAesthetics,
+  DEFAULT_DISPLAY_AESTHETICS,
+  DrawBroadcastPayload,
+} from "@/types/draw";
+import { SupportedLocale, LOCALES } from "@/constants/locales";
+import { LocaleSelector } from "@/components/shared/LocaleSelector";
+import { SignOutButton } from "@/components/shared/SignOutButton";
+import { AestheticsPanel } from "@/components/dashboard/AestheticsPanel";
+import { DrawHistorySidebar } from "@/components/dashboard/DrawHistorySidebar";
 
 function DashboardContent() {
   const params = useParams();
   const router = useRouter();
   const drawId = params.drawId as string;
+  const supabaseClient = useMemo(() => createClient(), []);
 
-  // 1. Structural Title Label State Tracking Fields
+  // 1. Structural Title Label & Workspace Config
   const [drawName, setDrawName] = useState("Loading Draw Workspace...");
-  const [drawType, setDrawType] = useState("random-names"); // random-names, weighted-ingest, random-numbers
+  const [drawType, setDrawType] = useState("random-names");
   const [weightedSubType, setWeightedSubtype] = useState<"count" | "range">("count");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [shareText, setShareText] = useState("Copy Public Screen Link");
   const [activeLocale, setActiveLocale] = useState<SupportedLocale>("en");
 
-  // 2. Active Pool Array Trackers (Stored securely inside Client Session RAM)
+  // 2. Active Pool & History Trackers (Client Session RAM)
   const [activePool, setActivePool] = useState<RaffleTicket[]>([]);
   const [historyPool, setHistoryPool] = useState<RaffleTicket[]>([]);
   const [hasTicketNumbers, setHasTicketNumbers] = useState<boolean>(false);
+  const [hasExtraColumnData, setHasExtraColumnData] = useState<boolean>(false);
 
-  // 3. Sequential Integer Configuration Range Parameters
+  // 3. Sequential Integer Range Parameters
   const [startRange, setStartRange] = useState<string>("");
   const [endRange, setEndRange] = useState<string>("");
   const [revealMode, setRevealMode] = useState<"name" | "ticket-number">("name");
 
-  // 4. Presentation Broadcast Aesthetics States (Device 2 Output Mapping)
-  const [customBgImage, setCustomBgImage] = useState<string | null>(null);
-  const [googleFontFamily, setGoogleFontFamily] = useState<string>("Inter");
-  const [canvasAnim, setCanvasAnim] = useState<string>("anim-shuffle");
-  const [canvasTextColor, setCanvasTextColor] = useState<string>("#fbbf24");
+  // 4. Presentation Broadcast Aesthetics State
+  const [aesthetics, setAesthetics] = useState<DisplayAesthetics>(DEFAULT_DISPLAY_AESTHETICS);
 
-  // 5. CACHED PERSISTENT CHANNEL TRACKER HOOK
+  // 5. Persistent WebSocket Channel Tracker
   const [activeChannel, setActiveChannel] = useState<RealtimeChannel | null>(null);
 
-  // Initialize unified persistent WebSocket listener connection on page mount
   useEffect(() => {
-    const { createClient } = require("@/lib/supabase/client");
-    const supabaseClient = createClient();
-
-    // Open an airtight network streaming channel mapped to your UUID Primary Key string
-    const channelInstance = supabaseClient.channel(`lucky-draw-room:${drawId}`).subscribe((status: string) => {
-      console.log(`Dashboard socket room pipeline connection status changed: ${status}`);
-    });
+    const channelInstance = supabaseClient
+      .channel(`lucky-draw-room:${drawId}`)
+      .subscribe((status: string) => {
+        console.log(`Dashboard socket room pipeline connection status changed: ${status}`);
+      });
 
     setActiveChannel(channelInstance);
 
-    // Sync draw title from local storage directory cache arrays
     const savedDraws = localStorage.getItem("tolo_active_draws");
     if (savedDraws) {
       const drawsList = JSON.parse(savedDraws);
@@ -62,46 +67,85 @@ function DashboardContent() {
     return () => {
       supabaseClient.removeChannel(channelInstance);
     };
-  }, [drawId]);
+  }, [drawId, supabaseClient]);
 
   const updateDrawNameGlobally = (newName: string) => {
     setDrawName(newName);
     const savedDraws = localStorage.getItem("tolo_active_draws");
     if (savedDraws) {
       const drawsList = JSON.parse(savedDraws);
-      const updatedList = drawsList.map((d: any) => d.id === drawId ? { ...d, name: newName } : d);
+      const updatedList = drawsList.map((d: any) =>
+        d.id === drawId ? { ...d, name: newName } : d
+      );
       localStorage.setItem("tolo_active_draws", JSON.stringify(updatedList));
     }
   };
+  const handleAestheticsUpdate = (patch: Partial<DisplayAesthetics>) => {
+    setAesthetics((prev) => {
+      const next = { ...prev, ...patch };
+      activeChannel?.send({
+        type: "broadcast",
+        event: "update-aesthetics",
+        payload: { ...next, localeCode: activeLocale },
+      });
+      return next;
+    });
+  };
 
-  // Automated In-Browser Excel Template Data Layout Provisioner
+  const handleResetAesthetics = () => {
+    setAesthetics(DEFAULT_DISPLAY_AESTHETICS);
+    activeChannel?.send({
+      type: "broadcast",
+      event: "update-aesthetics",
+      payload: { ...DEFAULT_DISPLAY_AESTHETICS, localeCode: activeLocale },
+    });
+  };
+
+  const handleLocaleChange = (newLocale: SupportedLocale) => {
+    setActiveLocale(newLocale);
+    activeChannel?.send({
+      type: "broadcast",
+      event: "update-aesthetics",
+      payload: { ...aesthetics, localeCode: newLocale },
+    });
+  };
+
   const handleDownloadTemplateFile = (templateType: "standard" | "weighted" | "range") => {
     const workbook = XLSX.utils.book_new();
     let templateData: any[] = [];
 
     if (templateType === "standard") {
-      templateData = [{ Name: "Alice Smith", TicketNumber: 1001 }, { Name: "Bob Jones", TicketNumber: 1002 }];
+      templateData = [
+        { Name: "Alice Smith", TicketNumber: 1001, Subtitle: "VIP Guest" },
+        { Name: "Bob Jones", TicketNumber: 1002, Subtitle: "Engineering" },
+      ];
     } else if (templateType === "weighted") {
-      templateData = [{ Name: "Alice Smith", Entries: 5 }, { Name: "Bob Jones", Entries: 1 }];
+      templateData = [
+        { Name: "Alice Smith", Entries: 5, Subtitle: "Gold Tier" },
+        { Name: "Bob Jones", Entries: 1, Subtitle: "Standard Tier" },
+      ];
     } else {
-      templateData = [{ Name: "Ben Smith", TicketRange: "1-150" }, { Name: "Julie Vance", TicketRange: "151-300" }];
+      templateData = [
+        { Name: "Ben Smith", TicketRange: "1-150", Subtitle: "Table 4" },
+        { Name: "Julie Vance", TicketRange: "151-300", Subtitle: "Table 9" },
+      ];
     }
     const worksheet = XLSX.utils.json_to_sheet(templateData);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Raffle Template");
     XLSX.writeFile(workbook, `Tolo_Draw_Template_${templateType}.xlsx`);
   };
 
-  // Browser Clipboard Easy Link Sharing Copy Engine
   const handleCopySharingPublicLink = () => {
     const publicDisplayUrl = `${window.location.origin}/display/${drawId}`;
-    navigator.clipboard.writeText(publicDisplayUrl).then(() => {
-      setShareText("✓ Copied!");
-      setTimeout(() => setShareText("Copy Public Screen Link"), 2000);
-    }).catch((err) => console.error(err));
+    navigator.clipboard
+      .writeText(publicDisplayUrl)
+      .then(() => {
+        setShareText("✓ Copied!");
+        setTimeout(() => setShareText("Copy Public Screen Link"), 2000);
+      })
+      .catch((err) => console.error(err));
   };
 
-  // In-Browser SheetJS Reader with Advanced Dynamic Auto-Detector Logic
-    // In-Browser SheetJS Reader with Advanced Structural Schema Verification Loops
   const handleSpreadsheetIngestion = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -111,44 +155,68 @@ function DashboardContent() {
       try {
         const data = new Uint8Array(event.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0]; 
+        const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const rawRows = XLSX.utils.sheet_to_json<any>(worksheet);
 
-        // ──> CRITICAL DATA PROTECTION SUB-SYSTEM: EMPTY WORKBOOK CHECK
         if (!rawRows || rawRows.length === 0) {
           alert("Data Ingestion Error: The uploaded spreadsheet appears to be completely empty.");
-          e.target.value = ""; // Clear file slot buffer instantly
+          e.target.value = "";
           setUploadedFileName(null);
           return;
         }
 
-        // ──> STRUCTURAL SCHEMA VALIDATOR MODULE
-        // Extracts the raw column property keys from the very first data row entry
         const sampleRowKeys = Object.keys(rawRows[0]);
-        const hasValidNameColumn = sampleRowKeys.some(key => 
+        const hasValidNameColumn = sampleRowKeys.some((key) =>
           ["name", "participant"].includes(key.toLowerCase().trim())
         );
 
         if (!hasValidNameColumn) {
           alert(
             "Spreadsheet Schema Mismatch! Ingestion Halted.\n\n" +
-            "Your file must contain a column header labeled exactly 'Name' or 'Participant' so the system can map contestant tokens successfully.\n\n" +
-            "Click the download links above to pull down a pre-formatted blueprint template sheet."
+              "Your file must contain a column header labeled exactly 'Name' or 'Participant' so the system can map contestant tokens successfully.\n\n" +
+              "Click the download links above to pull down a pre-formatted blueprint template sheet."
           );
-          e.target.value = ""; // Clear file slot buffer instantly
+          e.target.value = "";
           setUploadedFileName(null);
           return;
         }
 
-        // If the schema verification passes perfectly, proceed to parse the token allocations
+        const RESERVED_KEYS = new Set([
+          "name",
+          "participant",
+          "ticketnumber",
+          "ticketid",
+          "number",
+          "id",
+          "entries",
+          "weight",
+          "count",
+          "ticketrange",
+          "range",
+          "tickets",
+        ]);
+
+        const extraColumnKey = sampleRowKeys.find(
+          (key) => !RESERVED_KEYS.has(key.toLowerCase().trim())
+        );
+
         setUploadedFileName(file.name);
         const parsedTickets: RaffleTicket[] = [];
         let foundValidTicketIdentifiers = false;
+        let foundExtraText = false;
 
         rawRows.forEach((row) => {
           const name = row.Name || row.name || row.Participant || Object.values(row)[0];
           if (!name) return;
+
+          const rawExtra = extraColumnKey ? row[extraColumnKey] : undefined;
+          const extraText =
+            rawExtra !== undefined && rawExtra !== null && String(rawExtra).trim() !== ""
+              ? String(rawExtra).trim()
+              : undefined;
+          if (extraText) foundExtraText = true;
+
           let entriesCount = 1;
           let sequentialStart: number | undefined = undefined;
 
@@ -166,7 +234,9 @@ function DashboardContent() {
             }
           } else {
             entriesCount = parseInt(row.Entries || row.Weight || row.Count) || 1;
-            const explicitNum = parseInt(row.TicketNumber || row.TicketId || row.Number || row.id);
+            const explicitNum = parseInt(
+              row.TicketNumber || row.TicketId || row.Number || row.id
+            );
             if (!isNaN(explicitNum)) {
               sequentialStart = explicitNum;
               foundValidTicketIdentifiers = true;
@@ -177,14 +247,20 @@ function DashboardContent() {
             parsedTickets.push({
               ticketId: crypto.randomUUID(),
               participantName: String(name).trim(),
-              attachedNumber: sequentialStart !== undefined ? sequentialStart + (drawType === "weighted-ingest" && weightedSubType === "range" ? i - 1 : 0) : undefined,
+              attachedNumber:
+                sequentialStart !== undefined
+                  ? sequentialStart +
+                    (drawType === "weighted-ingest" && weightedSubType === "range" ? i - 1 : 0)
+                  : undefined,
+              extraText,
               entryIndex: i,
-              isNumericTicket: false
+              isNumericTicket: false,
             });
           }
         });
 
         setHasTicketNumbers(foundValidTicketIdentifiers);
+        setHasExtraColumnData(foundExtraText);
         if (!foundValidTicketIdentifiers) setRevealMode("name");
         setActivePool(parsedTickets);
         setHistoryPool([]);
@@ -195,8 +271,6 @@ function DashboardContent() {
     };
     reader.readAsArrayBuffer(file);
   };
-
-
   const handleGenerateNumericRange = (e: React.FormEvent) => {
     e.preventDefault();
     const min = parseInt(startRange);
@@ -210,24 +284,15 @@ function DashboardContent() {
         participantName: `Number ${i}`,
         attachedNumber: i,
         entryIndex: 1,
-        isNumericTicket: true
+        isNumericTicket: true,
       });
     }
     setHasTicketNumbers(true);
+    setHasExtraColumnData(false);
     setRevealMode("name");
     setActivePool(generatedTickets);
     setHistoryPool([]);
     setUploadedFileName(`Generated Range: ${min} to ${max}`);
-  };
-
-  const handleBackgroundBlobIngestion = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setCustomBgImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const triggerStateDrawAction = () => {
@@ -239,21 +304,22 @@ function DashboardContent() {
     setActivePool(updatedActivePool);
     setHistoryPool((prev) => [winningTicket, ...prev]);
 
-    const outputRevealVector = revealMode === "ticket-number" && winningTicket.attachedNumber !== undefined
-      ? `Ticket #${winningTicket.attachedNumber}`
-      : winningTicket.participantName;
+    const outputRevealVector =
+      revealMode === "ticket-number" && winningTicket.attachedNumber !== undefined
+        ? `Ticket #${winningTicket.attachedNumber}`
+        : winningTicket.participantName;
+
+    const payload: DrawBroadcastPayload = {
+      ...aesthetics,
+      winnerName: outputRevealVector,
+      winnerExtraText: winningTicket.extraText,
+      localeCode: activeLocale,
+    };
 
     activeChannel.send({
       type: "broadcast",
       event: "trigger-draw",
-      payload: { 
-        winnerName: outputRevealVector,
-        themeBgImage: customBgImage, 
-        themeFont: googleFontFamily,
-        themeAnim: canvasAnim,
-        textColor: canvasTextColor,
-        localeCode: activeLocale
-      },
+      payload,
     });
   };
 
@@ -266,185 +332,305 @@ function DashboardContent() {
       type: "broadcast",
       event: "reset-draw",
       payload: {
-        localeCode: activeLocale
-      }
+        localeCode: activeLocale,
+      },
     });
   };
 
   return (
     <main className="w-screen h-screen flex bg-zinc-950 text-white overflow-hidden font-sans">
       <section className="flex-1 p-8 space-y-6 overflow-y-auto border-r border-zinc-900">
-        <div className="flex justify-between items-start">
+        {/* TOP HEADER BAR */}
+        <div className="flex flex-wrap justify-between items-start gap-4">
           <div className="space-y-1 w-full max-w-md">
-            <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Draw Identity Label</label>
-            <input type="text" value={drawName} onChange={(e) => updateDrawNameGlobally(e.target.value)} className="w-full text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-800 focus:border-amber-500 focus:outline-none py-1 text-amber-400" />
+            <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
+              Draw Identity Label
+            </label>
+            <input
+              type="text"
+              value={drawName}
+              onChange={(e) => updateDrawNameGlobally(e.target.value)}
+              className="w-full text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-800 focus:border-amber-500 focus:outline-none py-1 text-amber-400"
+            />
           </div>
-          <div className="flex gap-2">
-            <select value={activeLocale} onChange={(e) => setActiveLocale(e.target.value as SupportedLocale)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs focus:outline-none focus:border-amber-500 text-zinc-300 font-medium cursor-pointer">
-              <option value="en">🇺🇸 English (EN)</option>
-              <option value="es">🇪🇸 Sorteo (ES)</option>
-              <option value="fr">🇫🇷 Français (FR)</option>
-              <option value="ar">🇸🇦 العربية (AR)</option>
-              <option value="zh">🇨🇳 繁體中文 (ZH)</option>
-            </select>
-            <button type="button" onClick={handleCopySharingPublicLink} className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-amber-400 rounded-xl transition-colors cursor-pointer select-none">{shareText}</button>
-            <button type="button" onClick={() => router.push("/manage")} className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer text-white">← Exit</button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <LocaleSelector value={activeLocale} onChange={handleLocaleChange} />
+            <button
+              type="button"
+              onClick={handleCopySharingPublicLink}
+              className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-amber-400 rounded-xl transition-colors cursor-pointer select-none"
+            >
+              {shareText}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/manage")}
+              className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold rounded-xl cursor-pointer text-white"
+            >
+              ← Exit
+            </button>
+            <SignOutButton
+              confirmMessage={
+                activePool.length > 0 || historyPool.length > 0
+                  ? "Signing out will permanently clear your active raffle pool from memory. Continue?"
+                  : undefined
+              }
+            />
           </div>
         </div>
 
         {/* STEP 1 */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
-          <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{LOCALES[activeLocale].step1Title}</h2>
+          <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+            {LOCALES[activeLocale].step1Title}
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
-              { id: "random-names", label: "Standard Names List", desc: "Basic single spreadsheet entry rows." },
-              { id: "weighted-ingest", label: "Weighted Spreadsheet", desc: "Handles weights or ticket number ranges (e.g. 1-150)." },
-              { id: "random-numbers", label: "Numbers Generator", desc: "Populates numeric entries directly inside client RAM." },
+              {
+                id: "random-names",
+                label: "Standard Names List",
+                desc: "Basic single spreadsheet entry rows.",
+              },
+              {
+                id: "weighted-ingest",
+                label: "Weighted Spreadsheet",
+                desc: "Handles weights or ticket number ranges (e.g. 1-150).",
+              },
+              {
+                id: "random-numbers",
+                label: "Numbers Generator",
+                desc: "Populates numeric entries directly inside client RAM.",
+              },
             ].map((option) => (
-              <label key={option.id} className={`flex gap-3 items-start p-4 rounded-xl border transition-all cursor-pointer bg-zinc-950 ${drawType === option.id ? "border-amber-500 bg-amber-500/5" : "border-zinc-800 hover:border-zinc-700"}`}>
-                <input type="radio" name="draw-type" value={option.id} checked={drawType === option.id} onChange={(e) => { setDrawType(e.target.value); setActivePool([]); setHistoryPool([]); setUploadedFileName(null); setHasTicketNumbers(false); }} className="mt-1 accent-amber-500 cursor-pointer" />
+              <label
+                key={option.id}
+                className={`flex gap-3 items-start p-4 rounded-xl border transition-all cursor-pointer bg-zinc-950 ${
+                  drawType === option.id
+                    ? "border-amber-500 bg-amber-500/5"
+                    : "border-zinc-800 hover:border-zinc-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="draw-type"
+                  value={option.id}
+                  checked={drawType === option.id}
+                  onChange={(e) => {
+                    setDrawType(e.target.value);
+                    setActivePool([]);
+                    setHistoryPool([]);
+                    setUploadedFileName(null);
+                    setHasTicketNumbers(false);
+                    setHasExtraColumnData(false);
+                  }}
+                  className="mt-1 accent-amber-500 cursor-pointer"
+                />
                 <div>
                   <span className="block text-sm font-bold">{option.label}</span>
-                  <span className="block text-xs text-zinc-400 mt-0.5 leading-normal">{option.desc}</span>
+                  <span className="block text-xs text-zinc-400 mt-0.5 leading-normal">
+                    {option.desc}
+                  </span>
                 </div>
               </label>
             ))}
           </div>
+
           {drawType === "weighted-ingest" && (
             <div className="flex gap-6 mt-2 p-4 bg-zinc-950/40 rounded-xl border border-zinc-800/80 animate-fade-in">
-              <label className="flex items-center gap-2 text-xs font-medium text-zinc-300 cursor-pointer"><input type="radio" name="weighted-subtype" checked={weightedSubType === "count"} onChange={() => { setWeightedSubtype("count"); setUploadedFileName(null); setActivePool([]); }} className="accent-amber-500" />Multiple Entries (Name + Count)</label>
-              <label className="flex items-center gap-2 text-xs font-medium text-zinc-300 cursor-pointer"><input type="radio" name="weighted-subtype" checked={weightedSubType === "range"} onChange={() => { setWeightedSubtype("range"); setUploadedFileName(null); setActivePool([]); }} className="accent-amber-500" />Sequential Ranges (e.g. 1-150)</label>
-            </div>
-          )}
-        </div>
-
-        {/* STEP 2 */}
-                {/* STEP 2 DESIGN INTEGRATION BLOCK */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          {drawType === "random-numbers" ? (
-            <form onSubmit={handleGenerateNumericRange} className="space-y-4">
-              <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Step 2: Define Core Integer Boundaries</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <input type="number" required placeholder="Starting Range" value={startRange} onChange={(e) => setStartRange(e.target.value)} className="px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl text-sm font-mono text-white w-full" />
-                <input type="number" required placeholder="Ending Range" value={endRange} onChange={(e) => setEndRange(e.target.value)} className="px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl text-sm font-mono text-white w-full" />
-              </div>
-              <button type="submit" className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold rounded-xl text-white">Lock Numbers Pool</button>
-            </form>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{LOCALES[activeLocale].step2Title}</h2>
-                <div className="text-xs text-zinc-500 flex items-center gap-1.5 animate-fade-in">
-                  <span>Download Blueprint:</span>
-                  {drawType === "random-names" && <button type="button" onClick={() => handleDownloadTemplateFile("standard")} className="text-amber-400 hover:underline font-bold cursor-pointer">Standard.xlsx</button>}
-                  {drawType === "weighted-ingest" && weightedSubType === "count" && <button type="button" onClick={() => handleDownloadTemplateFile("weighted")} className="text-amber-400 hover:underline font-bold cursor-pointer">Weighted.xlsx</button>}
-                  {drawType === "weighted-ingest" && weightedSubType === "range" && <button type="button" onClick={() => handleDownloadTemplateFile("range")} className="text-amber-400 hover:underline font-bold cursor-pointer">Ticket_Ranges.xlsx</button>}
-                </div>
-              </div>
-              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-zinc-800 hover:border-amber-500/40 rounded-xl cursor-pointer bg-zinc-950/50 transition-all">
-                {/* ──> THE VERIFICATION REMAP: Automatically toggles string based on validator updates */}
-                <span className="text-sm text-zinc-400">
-                  {uploadedFileName ? <span className="text-amber-400 font-bold">{uploadedFileName}</span> : "Load Names List (.xlsx)"}
-                </span>
-                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleSpreadsheetIngestion} />
+              <label className="flex items-center gap-2 text-xs font-medium text-zinc-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="weighted-subtype"
+                  checked={weightedSubType === "count"}
+                  onChange={() => {
+                    setWeightedSubtype("count");
+                    setUploadedFileName(null);
+                    setActivePool([]);
+                    setHasExtraColumnData(false);
+                  }}
+                  className="accent-amber-500"
+                />
+                Multiple Entries (Name + Count)
+              </label>
+              <label className="flex items-center gap-2 text-xs font-medium text-zinc-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="weighted-subtype"
+                  checked={weightedSubType === "range"}
+                  onChange={() => {
+                    setWeightedSubtype("range");
+                    setUploadedFileName(null);
+                    setActivePool([]);
+                    setHasExtraColumnData(false);
+                  }}
+                  className="accent-amber-500"
+                />
+                Sequential Ranges (e.g. 1-150)
               </label>
             </div>
           )}
         </div>
-        {/* STEP 3 */}
+        {/* STEP 2 */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+          {drawType === "random-numbers" ? (
+            <form onSubmit={handleGenerateNumericRange} className="space-y-4">
+              <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                Step 2: Define Core Integer Boundaries
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="number"
+                  required
+                  placeholder="Starting Range"
+                  value={startRange}
+                  onChange={(e) => setStartRange(e.target.value)}
+                  className="px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl text-sm font-mono text-white w-full"
+                />
+                <input
+                  type="number"
+                  required
+                  placeholder="Ending Range"
+                  value={endRange}
+                  onChange={(e) => setEndRange(e.target.value)}
+                  className="px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl text-sm font-mono text-white w-full"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold rounded-xl text-white cursor-pointer"
+              >
+                Lock Numbers Pool
+              </button>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  {LOCALES[activeLocale].step2Title}
+                </h2>
+                <div className="text-xs text-zinc-500 flex items-center gap-1.5 animate-fade-in">
+                  <span>Download Blueprint:</span>
+                  {drawType === "random-names" && (
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadTemplateFile("standard")}
+                      className="text-amber-400 hover:underline font-bold cursor-pointer"
+                    >
+                      Standard.xlsx
+                    </button>
+                  )}
+                  {drawType === "weighted-ingest" && weightedSubType === "count" && (
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadTemplateFile("weighted")}
+                      className="text-amber-400 hover:underline font-bold cursor-pointer"
+                    >
+                      Weighted.xlsx
+                    </button>
+                  )}
+                  {drawType === "weighted-ingest" && weightedSubType === "range" && (
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadTemplateFile("range")}
+                      className="text-amber-400 hover:underline font-bold cursor-pointer"
+                    >
+                      Ticket_Ranges.xlsx
+                    </button>
+                  )}
+                </div>
+              </div>
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-zinc-800 hover:border-amber-500/40 rounded-xl cursor-pointer bg-zinc-950/50 transition-all">
+                <span className="text-sm text-zinc-400">
+                  {uploadedFileName ? (
+                    <span className="text-amber-400 font-bold">{uploadedFileName}</span>
+                  ) : (
+                    "Load Names List (.xlsx)"
+                  )}
+                </span>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  className="hidden"
+                  onChange={handleSpreadsheetIngestion}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* STEP 3: Presentation Mode & Aesthetics Panel */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-6">
           {drawType !== "random-numbers" && hasTicketNumbers && (
             <div className="border-b border-zinc-800 pb-4 animate-fade-in">
-              <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Step 3: Identity Presentation View Mode</h2>
+              <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">
+                Step 3: Identity Presentation View Mode
+              </h2>
               <div className="flex gap-4">
-                {[{ id: "name", label: "Show Name String" }, { id: "ticket-number", label: "Show Ticket Number" }].map((mode) => (
-                  <label key={mode.id} className="flex items-center gap-2 text-sm font-medium text-zinc-300 cursor-pointer"><input type="radio" name="reveal-mode" value={mode.id} checked={revealMode === mode.id} onChange={() => setRevealMode(mode.id as any)} className="accent-amber-500" />{mode.label}</label>
+                {[
+                  { id: "name", label: "Show Name String" },
+                  { id: "ticket-number", label: "Show Ticket Number" },
+                ].map((mode) => (
+                  <label
+                    key={mode.id}
+                    className="flex items-center gap-2 text-sm font-medium text-zinc-300 cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="reveal-mode"
+                      value={mode.id}
+                      checked={revealMode === mode.id}
+                      onChange={() => setRevealMode(mode.id as any)}
+                      className="accent-amber-500"
+                    />
+                    {mode.label}
+                  </label>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400 font-bold block">{LOCALES[activeLocale].customBackdrop}</label>
-              <label className="block w-full text-center py-2.5 px-3 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded-xl text-xs font-bold cursor-pointer text-zinc-400">
-                {customBgImage ? "✓ Image Buffered in RAM" : "Upload Image File"}
-                <input type="file" accept="image/*" className="hidden" onChange={handleBackgroundBlobIngestion} />
-              </label>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400 font-bold block">{LOCALES[activeLocale].fontFamily}</label>
-              <input type="text" value={googleFontFamily} onChange={(e) => setGoogleFontFamily(e.target.value)} className="w-full p-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs focus:outline-none focus:border-amber-500 font-mono text-white" placeholder="e.g. Bungee Spice, Inter" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400 font-bold block">{LOCALES[activeLocale].hexColor}</label>
-              <div className="flex gap-2">
-                <input type="text" value={canvasTextColor} onChange={(e) => setCanvasTextColor(e.target.value)} className="w-full p-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs focus:outline-none focus:border-amber-500 font-mono text-white" />
-                <div style={{ backgroundColor: canvasTextColor }} className="w-9 h-8 rounded-lg border border-zinc-800 self-center" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400 font-bold block">{LOCALES[activeLocale].motionLoop}</label>
-              <select value={canvasAnim} onChange={(e) => setCanvasAnim(e.target.value)} className="w-full p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-200 focus:outline-none">
-                <option value="anim-shuffle">Blurred Rolling Shuffle Loop</option>
-                <option value="anim-slot">Vertical Slot Machine Spin</option>
-                <option value="anim-fade">Instant Clean Fade-In Reveal</option>
-                <option value="anim-zoom-pop">Explosive Scale Zoom-Pop Reveal</option>
-                <option value="anim-glitch">Cybernetic Matrix RGB Glitch Reveal</option>
-              </select>
-            </div>
-          </div>
+          <AestheticsPanel
+            aesthetics={aesthetics}
+            activeLocale={activeLocale}
+            hasExtraColumnData={hasExtraColumnData}
+            onUpdate={handleAestheticsUpdate}
+            onResetAesthetics={handleResetAesthetics}
+          />
         </div>
 
+        {/* DRAW ACTION BAR */}
         <div className="flex gap-4">
-          <button onClick={triggerStateDrawAction} disabled={!activePool || activePool.length === 0} className="w-full py-4 bg-amber-500 text-zinc-950 text-lg font-black rounded-xl cursor-pointer">{LOCALES[activeLocale].drawNextWinner}</button>
-          <button onClick={triggerPoolResetAction} disabled={!historyPool || historyPool.length === 0} className="px-6 py-4 bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 font-bold rounded-xl cursor-pointer">{LOCALES[activeLocale].resetPool}</button>
+          <button
+            onClick={triggerStateDrawAction}
+            disabled={!activePool || activePool.length === 0}
+            className="w-full py-4 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-zinc-950 text-lg font-black rounded-xl cursor-pointer transition-colors"
+          >
+            {LOCALES[activeLocale].drawNextWinner}
+          </button>
+          <button
+            onClick={triggerPoolResetAction}
+            disabled={!historyPool || historyPool.length === 0}
+            className="px-6 py-4 bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 disabled:opacity-40 font-bold rounded-xl cursor-pointer transition-colors"
+          >
+            {LOCALES[activeLocale].resetPool}
+          </button>
         </div>
       </section>
 
-      {/* HISTORIES TIMELINE SIDEBAR PANEL */}
-      <aside className="w-80 bg-zinc-900/40 p-8 flex flex-col justify-between border-l border-zinc-900">
-        <div className="space-y-6 overflow-hidden flex flex-col h-full">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-zinc-950 p-4 border border-zinc-800 rounded-xl text-center">
-              <span className="block text-2xl font-black text-amber-400 font-mono">{activePool?.length || 0}</span>
-              <span className="block text-[10px] uppercase font-bold text-zinc-500 mt-1">{LOCALES[activeLocale].remaining}</span>
-            </div>
-            <div className="bg-zinc-950 p-4 border border-zinc-800 rounded-xl text-center">
-              <span className="block text-2xl font-black text-zinc-400 font-mono">{historyPool?.length || 0}</span>
-              <span className="block text-[10px] uppercase font-bold text-zinc-500 mt-1">{LOCALES[activeLocale].drawnLog}</span>
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Live History Stack</h3>
-            <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl p-4 overflow-y-auto space-y-2">
-              {!historyPool || historyPool.length === 0 ? (
-                <p className="text-xs text-zinc-600 text-center pt-8">No winners drawn.</p>
-              ) : (
-                historyPool.map((ticket, index) => (
-                  <div key={ticket.ticketId} className={`p-3 text-sm rounded-lg font-medium border flex justify-between items-center ${index === 0 ? "bg-amber-500/10 border-amber-500/30 text-amber-400 font-bold animate-pulse" : "bg-zinc-900 border-zinc-800 text-zinc-300"}`}>
-                    <div className="flex flex-col">
-                      <span>{ticket.participantName}</span>
-                      {ticket.attachedNumber !== undefined && (
-                        <span className="text-[10px] text-amber-500/80 font-mono mt-0.5">Ticket #{ticket.attachedNumber}</span>
-                      )}
-                    </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950 text-zinc-500">#{historyPool.length - index}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </aside>
+      {/* HISTORIES TIMELINE SIDEBAR */}
+      <DrawHistorySidebar
+        remainingCount={activePool?.length || 0}
+        historyPool={historyPool}
+        activeLocale={activeLocale}
+      />
     </main>
   );
 }
 
-export default function AdminDashboardCore() {
+export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="w-screen h-screen flex items-center justify-center bg-zinc-950 text-zinc-500 font-mono text-xs animate-pulse">LOADING_DRAW_WORKSPACE...</div>}>
+    <Suspense fallback={<div className="w-screen h-screen bg-zinc-950" />}>
       <DashboardContent />
     </Suspense>
   );
