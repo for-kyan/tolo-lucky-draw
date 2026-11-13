@@ -49,6 +49,13 @@ function DashboardContent() {
   const [activeChannel, setActiveChannel] = useState<RealtimeChannel | null>(null);
 
   useEffect(() => {
+    const savedLocale = localStorage.getItem("tolo_locale") as SupportedLocale | null;
+    if (savedLocale && LOCALES[savedLocale]) {
+      setActiveLocale(savedLocale);
+    }
+  }, []);
+
+  useEffect(() => {
     const channelInstance = supabaseClient
       .channel(`lucky-draw-room:${drawId}`)
       .subscribe((status: string) => {
@@ -103,6 +110,7 @@ function DashboardContent() {
 
   const handleLocaleChange = (newLocale: SupportedLocale) => {
     setActiveLocale(newLocale);
+    localStorage.setItem("tolo_locale", newLocale);
     activeChannel?.send({
       type: "broadcast",
       event: "update-aesthetics",
@@ -337,14 +345,16 @@ function DashboardContent() {
     });
   };
 
+  const t = LOCALES[activeLocale];
+
   return (
-    <main className="w-screen h-screen flex bg-zinc-950 text-white overflow-hidden font-sans">
-      <section className="flex-1 p-8 space-y-6 overflow-y-auto border-r border-zinc-900">
+    <main className="w-screen min-h-screen lg:h-screen flex flex-col lg:flex-row bg-zinc-950 text-white overflow-y-auto lg:overflow-hidden font-sans">
+      <section className="flex-1 min-w-0 p-5 sm:p-6 lg:p-8 space-y-6 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-zinc-900">
         {/* TOP HEADER BAR */}
         <div className="flex flex-wrap justify-between items-start gap-4">
           <div className="space-y-1 w-full max-w-md">
             <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
-              Draw Identity Label
+              {t.drawIdentityLabel}
             </label>
             <input
               type="text"
@@ -368,9 +378,11 @@ function DashboardContent() {
               onClick={() => router.push("/manage")}
               className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold rounded-xl cursor-pointer text-white"
             >
-              ← Exit
+              {t.exitBtn}
             </button>
             <SignOutButton
+              label={t.signOut}
+              loadingLabel={t.signingOut}
               confirmMessage={
                 activePool.length > 0 || historyPool.length > 0
                   ? "Signing out will permanently clear your active raffle pool from memory. Continue?"
@@ -383,24 +395,24 @@ function DashboardContent() {
         {/* STEP 1 */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
           <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-            {LOCALES[activeLocale].step1Title}
+            {t.step1Title}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
               {
                 id: "random-names",
-                label: "Standard Names List",
-                desc: "Basic single spreadsheet entry rows.",
+                label: t.standardNamesLabel,
+                desc: t.standardNamesDesc,
               },
               {
                 id: "weighted-ingest",
-                label: "Weighted Spreadsheet",
-                desc: "Handles weights or ticket number ranges (e.g. 1-150).",
+                label: t.weightedSheetLabel,
+                desc: t.weightedSheetDesc,
               },
               {
                 id: "random-numbers",
-                label: "Numbers Generator",
-                desc: "Populates numeric entries directly inside client RAM.",
+                label: t.numbersGenLabel,
+                desc: t.numbersGenDesc,
               },
             ].map((option) => (
               <label
@@ -437,7 +449,7 @@ function DashboardContent() {
           </div>
 
           {drawType === "weighted-ingest" && (
-            <div className="flex gap-6 mt-2 p-4 bg-zinc-950/40 rounded-xl border border-zinc-800/80 animate-fade-in">
+            <div className="flex flex-wrap gap-6 mt-2 p-4 bg-zinc-950/40 rounded-xl border border-zinc-800/80 animate-fade-in">
               <label className="flex items-center gap-2 text-xs font-medium text-zinc-300 cursor-pointer">
                 <input
                   type="radio"
@@ -505,9 +517,9 @@ function DashboardContent() {
             </form>
           ) : (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap justify-between items-center gap-2">
                 <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                  {LOCALES[activeLocale].step2Title}
+                  {t.step2Title}
                 </h2>
                 <div className="text-xs text-zinc-500 flex items-center gap-1.5 animate-fade-in">
                   <span>Download Blueprint:</span>
@@ -545,7 +557,7 @@ function DashboardContent() {
                   {uploadedFileName ? (
                     <span className="text-amber-400 font-bold">{uploadedFileName}</span>
                   ) : (
-                    "Load Names List (.xlsx)"
+                    t.loadNamesPrompt
                   )}
                 </span>
                 <input
@@ -564,7 +576,7 @@ function DashboardContent() {
           {drawType !== "random-numbers" && hasTicketNumbers && (
             <div className="border-b border-zinc-800 pb-4 animate-fade-in">
               <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">
-                Step 3: Identity Presentation View Mode
+                {t.step3Title}
               </h2>
               <div className="flex gap-4">
                 {[
@@ -606,14 +618,14 @@ function DashboardContent() {
             disabled={!activePool || activePool.length === 0}
             className="w-full py-4 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-zinc-950 text-lg font-black rounded-xl cursor-pointer transition-colors"
           >
-            {LOCALES[activeLocale].drawNextWinner}
+            {t.drawNextWinner}
           </button>
           <button
             onClick={triggerPoolResetAction}
             disabled={!historyPool || historyPool.length === 0}
             className="px-6 py-4 bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 disabled:opacity-40 font-bold rounded-xl cursor-pointer transition-colors"
           >
-            {LOCALES[activeLocale].resetPool}
+            {t.resetPool}
           </button>
         </div>
       </section>

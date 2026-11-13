@@ -61,7 +61,7 @@ export function AdminSidebar({
   };
 
   return (
-    <aside className="w-80 lg:w-96 p-8 border-r border-zinc-900 bg-zinc-900/20 flex flex-col justify-between overflow-y-auto shrink-0">
+    <aside className="w-full lg:w-72 p-5 sm:p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-zinc-900 bg-zinc-900/20 flex flex-col justify-between shrink-0">
       <div className="space-y-6">
         {/* Brand & User Identity */}
         <div className="space-y-2">

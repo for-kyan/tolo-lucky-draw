@@ -4,11 +4,18 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 interface SignOutButtonProps {
+  label?: string;
+  loadingLabel?: string;
   confirmMessage?: string;
   className?: string;
 }
 
-export function SignOutButton({ confirmMessage, className }: SignOutButtonProps) {
+export function SignOutButton({
+  label = "Sign Out",
+  loadingLabel = "Signing Out...",
+  confirmMessage,
+  className,
+}: SignOutButtonProps) {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
@@ -39,7 +46,7 @@ export function SignOutButton({ confirmMessage, className }: SignOutButtonProps)
         "px-4 py-2 bg-zinc-900 hover:bg-red-500/10 border border-zinc-800 hover:border-red-500/40 text-xs font-bold text-zinc-300 hover:text-red-400 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
       }
     >
-      {isSigningOut ? "Signing Out..." : "Sign Out"}
+      {isSigningOut ? loadingLabel : label}
     </button>
   );
 }
