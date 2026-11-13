@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 interface AdminSidebarProps {
   userRole: "admin" | "operator" | null;
@@ -32,14 +31,19 @@ export function AdminSidebar({
     setProvisionStatus({ type: "loading", message: "Creating operator account..." });
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
-        email: newUserEmail.trim(),
-        password: newUserPassword,
-        options: { data: { role: "operator" } },
+      const response = await fetch("/api/admin/operators", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newUserEmail.trim(),
+          password: newUserPassword,
+        }),
       });
 
-      if (error) throw error;
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to create operator account.");
+      }
 
       setProvisionStatus({
         type: "success",
@@ -85,7 +89,7 @@ export function AdminSidebar({
                   {totalSystemDraws}
                 </span>
                 <span className="block text-[10px] uppercase font-bold text-zinc-500 tracking-wider mt-1">
-                  Total Draws Run
+                  Total Draws Created
                 </span>
               </div>
               <div className="bg-zinc-950 p-4 border border-zinc-800 rounded-xl">
@@ -107,7 +111,7 @@ export function AdminSidebar({
                   Add Operator Account
                 </h2>
                 <p className="text-[11px] text-zinc-500 mt-0.5">
-                  Create credentials for event hosts.
+                  Create confirmed credentials for event hosts.
                 </p>
               </div>
 
@@ -153,43 +157,13 @@ export function AdminSidebar({
             </form>
           </div>
         ) : (
-          <div className="bg-zinc-950 p-5 border border-zinc-800 rounded-2xl space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                Session Status
-              </h2>
-              <span className="text-[10px] font-semibold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
-                Privacy Active
-              </span>
-            </div>
-
-            <div className="space-y-2.5 pt-3 border-t border-zinc-900 text-xs">
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Active Workspaces</span>
-                <span className="font-mono font-bold text-zinc-200">
-                  {activeDrawsCount}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Data Storage</span>
-                <span className="font-semibold text-zinc-200">
-                  Browser Memory Only
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Auto-Wipe on Sign Out</span>
-                <span className="font-semibold text-emerald-400">Enabled</span>
-              </div>
-            </div>
+          <div className="bg-zinc-950 p-4 border border-zinc-800 rounded-xl flex justify-between items-center text-xs">
+            <span className="text-zinc-400 font-medium">Active Draws</span>
+            <span className="font-mono font-bold text-amber-400 text-sm">
+              {activeDrawsCount}
+            </span>
           </div>
         )}
-      </div>
-
-      {/* Privacy Reminder Footer */}
-      <div className="pt-4 border-t border-zinc-900">
-        <p className="text-[11px] text-zinc-500 leading-relaxed">
-          All participant names remain strictly in local browser memory and are permanently cleared when you delete a draw or sign out.
-        </p>
       </div>
     </aside>
   );

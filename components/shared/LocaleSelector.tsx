@@ -15,11 +15,11 @@ export function LocaleSelector({ value, onChange }: LocaleSelectorProps) {
       aria-label="Select display language"
       className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs focus:outline-none focus:border-amber-500 text-zinc-300 font-medium cursor-pointer"
     >
-      <option value="en">🇺🇸 English (EN)</option>
-      <option value="es">🇪🇸 Español (ES)</option>
-      <option value="fr">🇫🇷 Français (FR)</option>
-      <option value="ar">🇸🇦 العربية (AR)</option>
-      <option value="zh">🇨🇳 繁體中文 (ZH)</option>
+      <option value="en">🌐 English (EN)</option>
+      <option value="es">Español (ES)</option>
+      <option value="fr">Français (FR)</option>
+      <option value="ar">العربية (AR)</option>
+      <option value="zh">繁體中文 (ZH)</option>
     </select>
   );
 }
