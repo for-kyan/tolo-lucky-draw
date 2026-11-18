@@ -1,4 +1,4 @@
-// utils/queries/stats.ts
+// lib/queries/stats.ts
 import { createClient } from '@/lib/supabase/server';
 
 /**

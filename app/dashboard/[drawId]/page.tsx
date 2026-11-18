@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { RealtimeChannel } from "@supabase/supabase-js";
@@ -11,6 +11,10 @@ import {
   DEFAULT_DISPLAY_AESTHETICS,
   DrawBroadcastPayload,
 } from "@/types/draw";
+import {
+  attachBackdropSender,
+  BackdropSenderHandle,
+} from "@/lib/backdropTransport";
 import { SupportedLocale, LOCALES } from "@/constants/locales";
 import { LocaleSelector } from "@/components/shared/LocaleSelector";
 import { SignOutButton } from "@/components/shared/SignOutButton";
@@ -47,6 +51,8 @@ function DashboardContent() {
 
   // 5. Persistent WebSocket Channel Tracker
   const [activeChannel, setActiveChannel] = useState<RealtimeChannel | null>(null);
+  const activeBackdropRef = useRef<{ file: File; hash: string } | null>(null);
+  const backdropSenderRef = useRef<BackdropSenderHandle | null>(null);
 
   useEffect(() => {
     const savedLocale = localStorage.getItem("tolo_locale") as SupportedLocale | null;
@@ -62,6 +68,13 @@ function DashboardContent() {
         console.log(`Dashboard socket room pipeline connection status changed: ${status}`);
       });
 
+    const senderHandle = attachBackdropSender(
+      drawId,
+      channelInstance,
+      () => activeBackdropRef.current
+    );
+    backdropSenderRef.current = senderHandle;
+
     setActiveChannel(channelInstance);
 
     const savedDraws = localStorage.getItem("tolo_active_draws");
@@ -72,9 +85,13 @@ function DashboardContent() {
     }
 
     return () => {
+      void senderHandle.purgeCloudFallback();
+      senderHandle.detach();
+      backdropSenderRef.current = null;
       supabaseClient.removeChannel(channelInstance);
     };
   }, [drawId, supabaseClient]);
+
 
   const updateDrawNameGlobally = (newName: string) => {
     setDrawName(newName);
@@ -289,7 +306,7 @@ function DashboardContent() {
     for (let i = min; i <= max; i++) {
       generatedTickets.push({
         ticketId: crypto.randomUUID(),
-        participantName: `Number ${i}`,
+        participantName: `# ${i}`,
         attachedNumber: i,
         entryIndex: 1,
         isNumericTicket: true,
@@ -314,7 +331,7 @@ function DashboardContent() {
 
     const outputRevealVector =
       revealMode === "ticket-number" && winningTicket.attachedNumber !== undefined
-        ? `Ticket #${winningTicket.attachedNumber}`
+        ? `#${winningTicket.attachedNumber}`
         : winningTicket.participantName;
 
     const payload: DrawBroadcastPayload = {
@@ -608,6 +625,15 @@ function DashboardContent() {
             hasExtraColumnData={hasExtraColumnData}
             onUpdate={handleAestheticsUpdate}
             onResetAesthetics={handleResetAesthetics}
+            onBackdropFileSelected={(file, hash) => {
+              const prevHash = activeBackdropRef.current?.hash;
+              if (prevHash && prevHash !== hash) {
+                void backdropSenderRef.current?.purgeCloudFallback();
+              } else if (!file || !hash) {
+                void backdropSenderRef.current?.purgeCloudFallback();
+              }
+              activeBackdropRef.current = file && hash ? { file, hash } : null;
+            }}
           />
         </div>
 
