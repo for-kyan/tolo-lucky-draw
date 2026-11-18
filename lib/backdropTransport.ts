@@ -9,10 +9,23 @@ const P2P_FALLBACK_TIMEOUT_MS = 4500; // Trigger cloud fallback if P2P hasn't op
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
-    { urls: "stun:://google.com" },
-    { urls: "stun:://google.com" },
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
   ],
 };
+
+function safeBroadcast(
+  channel: RealtimeChannel,
+  event: string,
+  payload: unknown
+) {
+  if ((channel as any).state === "joined") {
+    void channel.send({ type: "broadcast", event, payload });
+  }
+}
 
 interface BackdropRequestSignal {
   requesterId: string;
@@ -62,7 +75,6 @@ export function attachBackdropSender(
 ): BackdropSenderHandle {
   const peerConnections = new Map<string, RTCPeerConnection>();
 
-  // State for Tier 3 cloud fallback (cached per file hash so multiple allowed clients share 1 upload)
   let cloudCache: {
     hash: string;
     signedReadUrl: string;
@@ -107,7 +119,6 @@ export function attachBackdropSender(
       }
     };
   }
-
   // Tier 2: Cross-network WebRTC DataChannel responder
   const handleRequest = async (payload: BackdropRequestSignal) => {
     const current = getActiveFile();
@@ -125,14 +136,10 @@ export function attachBackdropSender(
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
-        channel.send({
-          type: "broadcast",
-          event: "backdrop-ice",
-          payload: {
-            targetId: requesterId,
-            candidate: e.candidate.toJSON(),
-          } satisfies BackdropIceSignal,
-        });
+        safeBroadcast(channel, "backdrop-ice", {
+          targetId: requesterId,
+          candidate: e.candidate.toJSON(),
+        } satisfies BackdropIceSignal);
       }
     };
 
@@ -187,17 +194,13 @@ export function attachBackdropSender(
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    channel.send({
-      type: "broadcast",
-      event: "backdrop-offer",
-      payload: {
-        targetId: requesterId,
-        hash: current.hash,
-        mimeType: current.file.type || "image/png",
-        totalBytes: current.file.size,
-        sdp: offer,
-      } satisfies BackdropOfferSignal,
-    });
+    safeBroadcast(channel, "backdrop-offer", {
+      targetId: requesterId,
+      hash: current.hash,
+      mimeType: current.file.type || "image/png",
+      totalBytes: current.file.size,
+      sdp: offer,
+    } satisfies BackdropOfferSignal);
   };
 
   // Tier 3: Firewall-blocked fallback (enforces first 5 clients cap & 10/4h server limit)
@@ -207,43 +210,32 @@ export function attachBackdropSender(
 
     const { requesterId, hash } = payload;
 
-    // Reset cloud cache if operator picked a brand-new image hash
     if (cloudCache && cloudCache.hash !== hash) {
       await purgeCloudFallback();
     }
 
-    // Check first-5-clients guardrail if already uploaded
     if (cloudCache && cloudCache.hash === hash) {
       if (
         !cloudCache.grantedClients.has(requesterId) &&
         cloudCache.grantedClients.size >= MAX_FALLBACK_CLIENTS
       ) {
-        channel.send({
-          type: "broadcast",
-          event: "backdrop-fallback-url",
-          payload: {
-            targetId: requesterId,
-            hash,
-            rejectedReason: "Cloud fallback limit reached (first 5 display screens only).",
-          } satisfies BackdropFallbackUrlSignal,
-        });
+        safeBroadcast(channel, "backdrop-fallback-url", {
+          targetId: requesterId,
+          hash,
+          rejectedReason: "Cloud fallback limit reached (first 5 display screens only).",
+        } satisfies BackdropFallbackUrlSignal);
         return;
       }
 
       cloudCache.grantedClients.add(requesterId);
-      channel.send({
-        type: "broadcast",
-        event: "backdrop-fallback-url",
-        payload: {
-          targetId: requesterId,
-          hash,
-          signedReadUrl: cloudCache.signedReadUrl,
-        } satisfies BackdropFallbackUrlSignal,
-      });
+      safeBroadcast(channel, "backdrop-fallback-url", {
+        targetId: requesterId,
+        hash,
+        signedReadUrl: cloudCache.signedReadUrl,
+      } satisfies BackdropFallbackUrlSignal);
       return;
     }
 
-    // Deduplicate concurrent upload requests if 2 stage screens time out simultaneously
     if (!pendingUploadPromise) {
       pendingUploadPromise = (async () => {
         try {
@@ -295,15 +287,11 @@ export function attachBackdropSender(
 
     const result: any = await pendingUploadPromise;
     if (!result || !result.signedReadUrl) {
-      channel.send({
-        type: "broadcast",
-        event: "backdrop-fallback-url",
-        payload: {
-          targetId: requesterId,
-          hash,
-          rejectedReason: result?.error || "Cloud fallback unavailable.",
-        } satisfies BackdropFallbackUrlSignal,
-      });
+      safeBroadcast(channel, "backdrop-fallback-url", {
+        targetId: requesterId,
+        hash,
+        rejectedReason: result?.error || "Cloud fallback unavailable.",
+      } satisfies BackdropFallbackUrlSignal);
       return;
     }
 
@@ -320,28 +308,20 @@ export function attachBackdropSender(
       !cloudCache.grantedClients.has(requesterId) &&
       cloudCache.grantedClients.size >= MAX_FALLBACK_CLIENTS
     ) {
-      channel.send({
-        type: "broadcast",
-        event: "backdrop-fallback-url",
-        payload: {
-          targetId: requesterId,
-          hash,
-          rejectedReason: "Cloud fallback limit reached (first 5 display screens only).",
-        } satisfies BackdropFallbackUrlSignal,
-      });
+      safeBroadcast(channel, "backdrop-fallback-url", {
+        targetId: requesterId,
+        hash,
+        rejectedReason: "Cloud fallback limit reached (first 5 display screens only).",
+      } satisfies BackdropFallbackUrlSignal);
       return;
     }
 
     cloudCache.grantedClients.add(requesterId);
-    channel.send({
-      type: "broadcast",
-      event: "backdrop-fallback-url",
-      payload: {
-        targetId: requesterId,
-        hash,
-        signedReadUrl: cloudCache.signedReadUrl,
-      } satisfies BackdropFallbackUrlSignal,
-    });
+    safeBroadcast(channel, "backdrop-fallback-url", {
+      targetId: requesterId,
+      hash,
+      signedReadUrl: cloudCache.signedReadUrl,
+    } satisfies BackdropFallbackUrlSignal);
   };
   channel
     .on("broadcast", { event: "backdrop-request" }, ({ payload }) => {
@@ -429,14 +409,10 @@ export function fetchBackdropFromDashboard(
     const requestCloudFallback = () => {
       if (settled || p2pConnected || fallbackRequested) return;
       fallbackRequested = true;
-      channel.send({
-        type: "broadcast",
-        event: "backdrop-fallback-request",
-        payload: {
-          requesterId,
-          hash: expectedHash,
-        } satisfies BackdropRequestSignal,
-      });
+      safeBroadcast(channel, "backdrop-fallback-request", {
+        requesterId,
+        hash: expectedHash,
+      } satisfies BackdropRequestSignal);
     };
 
     const hardTimer = setTimeout(() => {
@@ -447,7 +423,6 @@ export function fetchBackdropFromDashboard(
       }
     }, timeoutMs);
 
-    // If P2P hasn't opened within 4.5s (e.g. strict hotel/corporate NAT), trigger Tier 3 fallback
     const p2pFallbackTimer = setTimeout(() => {
       requestCloudFallback();
     }, P2P_FALLBACK_TIMEOUT_MS);
@@ -473,14 +448,10 @@ export function fetchBackdropFromDashboard(
 
     pc.onicecandidate = (e) => {
       if (e.candidate && !settled) {
-        channel.send({
-          type: "broadcast",
-          event: "backdrop-ice",
-          payload: {
-            targetId: requesterId,
-            candidate: e.candidate.toJSON(),
-          } satisfies BackdropIceSignal,
-        });
+        safeBroadcast(channel, "backdrop-ice", {
+          targetId: requesterId,
+          candidate: e.candidate.toJSON(),
+        } satisfies BackdropIceSignal);
       }
     };
 
@@ -537,14 +508,10 @@ export function fetchBackdropFromDashboard(
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        channel.send({
-          type: "broadcast",
-          event: "backdrop-answer",
-          payload: {
-            targetId: requesterId,
-            sdp: answer,
-          } satisfies BackdropAnswerSignal,
-        });
+        safeBroadcast(channel, "backdrop-answer", {
+          targetId: requesterId,
+          sdp: answer,
+        } satisfies BackdropAnswerSignal);
       })
       .on("broadcast", { event: "backdrop-ice" }, async ({ payload }) => {
         const iceData = payload as BackdropIceSignal;
@@ -579,13 +546,9 @@ export function fetchBackdropFromDashboard(
       });
 
     // Announce cache miss to Dashboard
-    channel.send({
-      type: "broadcast",
-      event: "backdrop-request",
-      payload: {
-        requesterId,
-        hash: expectedHash,
-      } satisfies BackdropRequestSignal,
-    });
+    safeBroadcast(channel, "backdrop-request", {
+      requesterId,
+      hash: expectedHash,
+    } satisfies BackdropRequestSignal);
   });
 }

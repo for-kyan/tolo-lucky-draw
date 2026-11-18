@@ -3,13 +3,64 @@
 import { useState } from "react";
 import {
   DisplayAesthetics,
-  VerticalOffset,
-  HorizontalAlign,
+  GridPosition9,
   BgFitMode,
+  ConfettiStyle,
   SubTextPositionMode,
 } from "@/types/draw";
 import { LOCALES, SupportedLocale } from "@/constants/locales";
 import { validateBackdropImage, computeBlobSha256 } from "@/lib/backdropCache";
+
+const GRID_CELLS: { id: GridPosition9; label: string; arrow: string }[] = [
+  { id: "top-left", label: "Top Left", arrow: "↖" },
+  { id: "top-center", label: "Top Centre", arrow: "↑" },
+  { id: "top-right", label: "Top Right", arrow: "↗" },
+  { id: "middle-left", label: "Middle Left", arrow: "←" },
+  { id: "middle-center", label: "Centre", arrow: "•" },
+  { id: "middle-right", label: "Middle Right", arrow: "→" },
+  { id: "bottom-left", label: "Bottom Left", arrow: "↙" },
+  { id: "bottom-center", label: "Bottom Centre", arrow: "↓" },
+  { id: "bottom-right", label: "Bottom Right", arrow: "↘" },
+];
+
+function PositionGrid3x3({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: GridPosition9;
+  onChange: (next: GridPosition9) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="grid grid-cols-3 gap-1 bg-zinc-950 border border-zinc-800 rounded-xl p-1.5 w-36"
+    >
+      {GRID_CELLS.map((cell) => {
+        const active = value === cell.id;
+        return (
+          <button
+            key={cell.id}
+            type="button"
+            title={cell.label}
+            aria-label={cell.label}
+            aria-checked={active}
+            onClick={() => onChange(cell.id)}
+            className={`h-8 rounded-lg text-xs font-black transition-colors cursor-pointer flex items-center justify-center ${
+              active
+                ? "bg-amber-500 text-zinc-950 shadow-sm"
+                : "bg-zinc-900/70 text-zinc-400 hover:text-white hover:bg-zinc-800"
+            }`}
+          >
+            {cell.arrow}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 interface AestheticsPanelProps {
   aesthetics: DisplayAesthetics;
@@ -32,7 +83,7 @@ export function AestheticsPanel({
   const [isProcessingImage, setIsProcessingImage] = useState<boolean>(false);
 
   const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.item(0);
     if (!file) return;
 
     setUploadError(null);
@@ -59,7 +110,7 @@ export function AestheticsPanel({
       e.target.value = "";
     }
   };
-
+  
   const handleRemoveBackdrop = () => {
     setUploadError(null);
     onBackdropFileSelected?.(null, null);
@@ -74,11 +125,12 @@ export function AestheticsPanel({
     onUpdate({ themeFontSize: nextSize });
   };
 
-  const handleVerticalOffsetChange = (nextOffset: VerticalOffset) => {
-    if (nextOffset === "bottom" && aesthetics.subTextMode === "below") {
-      onUpdate({ verticalOffset: nextOffset, subTextMode: "above" });
+  // Coordinated guardrail: moving text to any Bottom row cell prevents "Below" extra line
+  const handleTextPositionChange = (nextPos: GridPosition9) => {
+    if (nextPos.startsWith("bottom-") && aesthetics.subTextMode === "below") {
+      onUpdate({ textPosition: nextPos, subTextMode: "above" });
     } else {
-      onUpdate({ verticalOffset: nextOffset });
+      onUpdate({ textPosition: nextPos });
     }
   };
 
@@ -199,8 +251,8 @@ export function AestheticsPanel({
         </div>
       </div>
 
-      {/* ROW 2: Text Color, Font Background, Background Blur */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-zinc-800/70">
+      {/* ROW 2: Text Color, Font Background, Background Blur, Confetti Dropdown */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2 border-t border-zinc-800/70">
         <div className="space-y-2">
           <label className="text-xs text-zinc-400 font-bold block">
             {t.hexColor}
@@ -255,29 +307,67 @@ export function AestheticsPanel({
             className="w-full accent-amber-500 cursor-pointer mt-2"
           />
         </div>
+
+        <div className="space-y-2">
+          <label className="text-xs text-zinc-400 font-bold block">
+            Winner Confetti
+          </label>
+          <select
+            value={aesthetics.confettiStyle}
+            onChange={(e) =>
+              onUpdate({ confettiStyle: e.target.value as ConfettiStyle })
+            }
+            className="w-full p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-200 focus:outline-none"
+          >
+            <option value="off">Off (No Confetti)</option>
+            <option value="classic">Classic Multicolour</option>
+            <option value="gold">Championship Gold</option>
+            <option value="neon">Cyber Neon</option>
+            <option value="fireworks">High-Density Burst</option>
+          </select>
+        </div>
       </div>
 
-      {/* ROW 3: Stage Background Color (if no image) OR Image Fit Mode + Horizontal Align */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-zinc-800/70">
+      {/* ROW 3: Solid Background Color + Pulse Toggle OR 3-Mode Image Scaling */}
+      <div className="pt-2 border-t border-zinc-800/70">
         {!hasBackdrop ? (
-          <div className="space-y-2">
-            <label className="text-xs text-zinc-400 font-bold block">
-              Stage Background Color
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={aesthetics.bgColor}
-                onChange={(e) => onUpdate({ bgColor: e.target.value })}
-                className="w-full p-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs focus:outline-none focus:border-amber-500 font-mono text-white"
-                placeholder="#09090b"
-              />
-              <input
-                type="color"
-                value={aesthetics.bgColor}
-                onChange={(e) => onUpdate({ bgColor: e.target.value })}
-                className="w-10 h-9 rounded-lg border border-zinc-800 bg-zinc-950 cursor-pointer"
-              />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-400 font-bold block">
+                Stage Background Colour
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={aesthetics.bgColor}
+                  onChange={(e) => onUpdate({ bgColor: e.target.value })}
+                  className="w-full p-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs focus:outline-none focus:border-amber-500 font-mono text-white"
+                  placeholder="#09090b"
+                />
+                <input
+                  type="color"
+                  value={aesthetics.bgColor}
+                  onChange={(e) => onUpdate({ bgColor: e.target.value })}
+                  className="w-10 h-9 rounded-lg border border-zinc-800 bg-zinc-950 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-400 font-bold block">
+                Ambient Glow Effect
+              </label>
+              <label className="flex items-center justify-between px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded-xl cursor-pointer transition-colors">
+                <span className="text-xs font-medium text-zinc-300">
+                  {aesthetics.bgPulseEnabled ? "Pulsing Glow On" : "Flat Solid Colour (Off)"}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={aesthetics.bgPulseEnabled}
+                  onChange={(e) => onUpdate({ bgPulseEnabled: e.target.checked })}
+                  className="w-4 h-4 accent-amber-500 cursor-pointer"
+                />
+              </label>
             </div>
           </div>
         ) : (
@@ -285,11 +375,12 @@ export function AestheticsPanel({
             <label className="text-xs text-zinc-400 font-bold block">
               Background Image Scaling
             </label>
-            <div className="grid grid-cols-2 gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl p-1">
+            <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl p-1">
               {(
                 [
                   { id: "stretch", label: "Stretch (Fill Screen)" },
                   { id: "contain", label: "Keep Aspect Ratio" },
+                  { id: "original", label: "Original File Size" },
                 ] as const
               ).map((fit) => (
                 <label
@@ -314,80 +405,46 @@ export function AestheticsPanel({
             </div>
           </div>
         )}
-        {/* Horizontal Alignment (Left / Centre / Right for Text & Aspect-Preserved Backdrop) */}
-        <div className="space-y-2">
-          <label className="text-xs text-zinc-400 font-bold block">
-            Horizontal Alignment
-          </label>
-          <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl p-1">
-            {(
-              [
-                { id: "left", label: "Left" },
-                { id: "center", label: "Centre" },
-                { id: "right", label: "Right" },
-              ] as const
-            ).map((align) => (
-              <label
-                key={align.id}
-                className={`text-center py-1.5 px-2 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
-                  aesthetics.horizontalAlign === align.id
-                    ? "bg-amber-500 text-zinc-950"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="horizontal-align"
-                  value={align.id}
-                  checked={aesthetics.horizontalAlign === align.id}
-                  onChange={() =>
-                    onUpdate({ horizontalAlign: align.id as HorizontalAlign })
-                  }
-                  className="hidden"
-                />
-                {align.label}
-              </label>
-            ))}
-          </div>
-        </div>
       </div>
-
-      {/* ROW 4: Coordinated Screen Offset & Extra Excel Column Line */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-zinc-800/70">
-        {/* Display Vertical Third Offset */}
+      {/* ROW 4: 3x3 Positioning Grids (Text Position + Screen Image Anchor) & Extra Excel Column */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-zinc-800/70">
+        {/* Winner Text 3x3 Position Grid (Anchored to Background Image Bounds) */}
         <div className="space-y-2">
-          <label className="text-xs text-zinc-400 font-bold block">
-            {t.screenPosLabel}
-          </label>
-          <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl p-1">
-            {(
-              [
-                { id: "top", label: t.posTop },
-                { id: "middle", label: t.posMiddle },
-                { id: "bottom", label: t.posBottom },
-              ] as const
-            ).map((pos) => (
-              <label
-                key={pos.id}
-                className={`text-center py-1.5 px-2 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
-                  aesthetics.verticalOffset === pos.id
-                    ? "bg-amber-500 text-zinc-950"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="vertical-offset"
-                  value={pos.id}
-                  checked={aesthetics.verticalOffset === pos.id}
-                  onChange={() => handleVerticalOffsetChange(pos.id)}
-                  className="hidden"
-                />
-                {pos.label}
-              </label>
-            ))}
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-zinc-400 font-bold">
+              {t.screenPosLabel}
+            </label>
+            <span className="text-[10px] font-mono text-amber-400">
+              {GRID_CELLS.find((c) => c.id === aesthetics.textPosition)?.label}
+            </span>
           </div>
+          <PositionGrid3x3
+            value={aesthetics.textPosition}
+            onChange={handleTextPositionChange}
+            ariaLabel="Winner text 3x3 position"
+          />
         </div>
+
+        {/* Stage Image 3x3 Screen Position (Visible when image is not stretched full-screen) */}
+        {hasBackdrop && aesthetics.bgFitMode !== "stretch" ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-zinc-400 font-bold">
+                Image on Screen
+              </label>
+              <span className="text-[10px] font-mono text-amber-400">
+                {GRID_CELLS.find((c) => c.id === aesthetics.bgImagePosition)?.label}
+              </span>
+            </div>
+            <PositionGrid3x3
+              value={aesthetics.bgImagePosition}
+              onChange={(nextPos) => onUpdate({ bgImagePosition: nextPos })}
+              ariaLabel="Background image 3x3 screen position"
+            />
+          </div>
+        ) : (
+          <div className="hidden md:block" />
+        )}
 
         {/* Extra Excel Column Line Position */}
         <div className="space-y-2">
@@ -415,14 +472,14 @@ export function AestheticsPanel({
               ] as const
             ).map((mode) => {
               const isBelowBlocked =
-                mode.id === "below" && aesthetics.verticalOffset === "bottom";
+                mode.id === "below" && aesthetics.textPosition.startsWith("bottom-");
 
               return (
                 <label
                   key={mode.id}
                   title={
                     isBelowBlocked
-                      ? "Disabled while Display Position is set to Bottom Third"
+                      ? "Disabled while Text Position is on the bottom row"
                       : undefined
                   }
                   className={`text-center py-1.5 px-2 rounded-lg text-xs font-bold transition-colors ${

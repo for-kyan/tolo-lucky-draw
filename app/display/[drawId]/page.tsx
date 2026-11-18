@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
@@ -9,12 +9,41 @@ import {
   DisplayAesthetics,
   DEFAULT_DISPLAY_AESTHETICS,
   DrawBroadcastPayload,
+  GridPosition9,
 } from "@/types/draw";
 import {
   getBackdropFromCache,
   removeBackdropFromCache,
 } from "@/lib/backdropCache";
 import { fetchBackdropFromDashboard } from "@/lib/backdropTransport";
+import { WinnerConfetti } from "@/components/display/WinnerConfetti";
+
+function gridPositionToFlexClasses(pos: GridPosition9): string {
+  const [vPart, hPart] = pos.split("-") as [
+    "top" | "middle" | "bottom",
+    "left" | "center" | "right"
+  ];
+  const vClass =
+    vPart === "top"
+      ? "justify-start"
+      : vPart === "bottom"
+      ? "justify-end"
+      : "justify-center";
+  const hClass =
+    hPart === "left"
+      ? "items-start"
+      : hPart === "right"
+      ? "items-end"
+      : "items-center";
+  return `${vClass} ${hClass}`;
+}
+
+interface ImageBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
 function DisplayContent() {
   const params = useParams();
@@ -24,9 +53,11 @@ function DisplayContent() {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const activeObjectUrlRef = useRef<string | null>(null);
   const loadedHashRef = useRef<string | null>(null);
+  const bgImgRef = useRef<HTMLImageElement | null>(null);
 
   const [aesthetics, setAesthetics] = useState<DisplayAesthetics>(DEFAULT_DISPLAY_AESTHETICS);
   const [resolvedBgUrl, setResolvedBgUrl] = useState<string | null>(null);
+  const [imageBounds, setImageBounds] = useState<ImageBounds | null>(null);
   const [winnerName, setWinnerName] = useState<string>("");
   const [winnerExtraText, setWinnerExtraText] = useState<string | undefined>(undefined);
   const [displayTarget, setDisplayTarget] = useState<string>("Awaiting Draw Order...");
@@ -67,7 +98,6 @@ function DisplayContent() {
       }
     };
   }, [drawId]);
-
   useEffect(() => {
     if (!aesthetics.themeFont || aesthetics.themeFont.trim() === "") return;
 
@@ -96,6 +126,52 @@ function DisplayContent() {
     );
   }, [aesthetics.themeFont]);
 
+  const activeBackdropSrc = resolvedBgUrl || aesthetics.themeBgImage;
+
+  // Measure actual rendered image bounds so Text 3x3 grid anchors directly onto the image
+  const measureImageBounds = useCallback(() => {
+    const img = bgImgRef.current;
+    if (!img || !activeBackdropSrc || !img.complete || img.naturalWidth === 0) {
+      setImageBounds(null);
+      return;
+    }
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    if (aesthetics.bgFitMode === "stretch") {
+      setImageBounds({ left: 0, top: 0, width: vw, height: vh });
+      return;
+    }
+
+    let renderedW = img.naturalWidth;
+    let renderedH = img.naturalHeight;
+
+    if (aesthetics.bgFitMode === "contain") {
+      const scale = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
+      renderedW = img.naturalWidth * scale;
+      renderedH = img.naturalHeight * scale;
+    }
+
+    const [vPart, hPart] = aesthetics.bgImagePosition.split("-") as [
+      "top" | "middle" | "bottom",
+      "left" | "center" | "right"
+    ];
+
+    const left =
+      hPart === "left" ? 0 : hPart === "right" ? vw - renderedW : (vw - renderedW) / 2;
+    const top =
+      vPart === "top" ? 0 : vPart === "bottom" ? vh - renderedH : (vh - renderedH) / 2;
+
+    setImageBounds({ left, top, width: renderedW, height: renderedH });
+  }, [activeBackdropSrc, aesthetics.bgFitMode, aesthetics.bgImagePosition]);
+
+  useEffect(() => {
+    measureImageBounds();
+    window.addEventListener("resize", measureImageBounds);
+    return () => window.removeEventListener("resize", measureImageBounds);
+  }, [measureImageBounds]);
+
   useEffect(() => {
     const syncBackdropByHash = async (
       nextHash: string | null | undefined,
@@ -103,7 +179,6 @@ function DisplayContent() {
     ) => {
       if (nextHash === undefined) return;
 
-      // Backdrop removed by operator -> purge IndexedDB & revoke ObjectURL
       if (nextHash === null) {
         loadedHashRef.current = null;
         if (activeObjectUrlRef.current) {
@@ -111,16 +186,15 @@ function DisplayContent() {
           activeObjectUrlRef.current = null;
         }
         setResolvedBgUrl(null);
+        setImageBounds(null);
         await removeBackdropFromCache(drawId);
         return;
       }
 
-      // Already active in memory -> 0 bytes transferred
       if (loadedHashRef.current === nextHash && activeObjectUrlRef.current) {
         return;
       }
 
-      // Check local IndexedDB first -> avoids re-streaming on refresh
       const cached = await getBackdropFromCache(drawId, nextHash);
       if (cached) {
         if (activeObjectUrlRef.current) {
@@ -133,7 +207,6 @@ function DisplayContent() {
         return;
       }
 
-      // Cache miss -> stream once via BroadcastChannel or WebRTC DataChannel
       try {
         const streamedUrl = await fetchBackdropFromDashboard(drawId, channel, nextHash);
         if (activeObjectUrlRef.current) {
@@ -155,20 +228,21 @@ function DisplayContent() {
         themeBgImage: data.themeBgImage !== undefined ? data.themeBgImage : prev.themeBgImage,
         themeBgHash: data.themeBgHash !== undefined ? data.themeBgHash : prev.themeBgHash,
         bgColor: data.bgColor ?? prev.bgColor,
+        bgPulseEnabled: data.bgPulseEnabled ?? prev.bgPulseEnabled,
         bgFitMode: data.bgFitMode ?? prev.bgFitMode,
+        bgImagePosition: data.bgImagePosition ?? prev.bgImagePosition,
+        textPosition: data.textPosition ?? prev.textPosition,
+        confettiStyle: data.confettiStyle ?? prev.confettiStyle,
         themeFont: data.themeFont ?? prev.themeFont,
         themeFontSize: data.themeFontSize ?? prev.themeFontSize,
         themeAnim: data.themeAnim ?? prev.themeAnim,
         textColor: data.textColor ?? prev.textColor,
         bgBlurPx: data.bgBlurPx ?? prev.bgBlurPx,
         fontBgEnabled: data.fontBgEnabled ?? prev.fontBgEnabled,
-        verticalOffset: data.verticalOffset ?? prev.verticalOffset,
-        horizontalAlign: data.horizontalAlign ?? prev.horizontalAlign,
         subTextMode: data.subTextMode ?? prev.subTextMode,
       }));
       void syncBackdropByHash(data.themeBgHash, channel);
     };
-
     const channel = supabase.channel(`lucky-draw-room:${drawId}`);
     channelRef.current = channel;
 
@@ -198,7 +272,9 @@ function DisplayContent() {
         const revealWinner = () => {
           setIsAnimating(false);
           setDisplayTarget(data.winnerName);
-          setShowConfetti(true);
+          if ((data.confettiStyle ?? aesthetics.confettiStyle) !== "off") {
+            setShowConfetti(true);
+          }
         };
 
         if (data.themeAnim === "anim-shuffle") {
@@ -256,36 +332,16 @@ function DisplayContent() {
       channelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [drawId, supabase]);
-  const verticalAlignClass =
-    aesthetics.verticalOffset === "top"
-      ? "justify-start pt-[6vh]"
-      : aesthetics.verticalOffset === "bottom"
-      ? "justify-end pb-[6vh]"
-      : "justify-center";
+  }, [drawId, supabase, aesthetics.confettiStyle]);
 
-  const horizontalItemsClass =
-    aesthetics.horizontalAlign === "left"
-      ? "items-start"
-      : aesthetics.horizontalAlign === "right"
-      ? "items-end"
-      : "items-center";
+  const imageContainerFlex = gridPositionToFlexClasses(aesthetics.bgImagePosition);
+  const textContainerFlex = gridPositionToFlexClasses(aesthetics.textPosition);
 
-  const textAlignmentClass =
-    aesthetics.horizontalAlign === "left"
-      ? "text-left items-start"
-      : aesthetics.horizontalAlign === "right"
-      ? "text-right items-end"
-      : "text-center items-center";
-
-  const bgObjectPosition =
-    aesthetics.horizontalAlign === "left"
-      ? "left center"
-      : aesthetics.horizontalAlign === "right"
-      ? "right center"
-      : "center center";
-
-  const activeBackdropSrc = resolvedBgUrl || aesthetics.themeBgImage;
+  const textHorizontalAlign = aesthetics.textPosition.endsWith("-left")
+    ? "text-left items-start"
+    : aesthetics.textPosition.endsWith("-right")
+    ? "text-right items-end"
+    : "text-center items-center";
 
   const showExtraLine =
     !isAnimating &&
@@ -293,21 +349,24 @@ function DisplayContent() {
     aesthetics.subTextMode !== "hidden";
 
   const effectiveSubTextMode =
-    aesthetics.verticalOffset === "bottom" && aesthetics.subTextMode === "below"
+    aesthetics.textPosition.startsWith("bottom-") && aesthetics.subTextMode === "below"
       ? "above"
       : aesthetics.subTextMode;
 
-  const CONFETTI_PIECES = Array.from({ length: 36 }, (_, idx) => {
-    const colours = ["#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a78bfa", "#fb923c"];
-    return {
-      id: idx,
-      leftPct: (idx * 2.8) % 100,
-      delaySec: (idx % 9) * 0.12,
-      durationSec: 2.4 + (idx % 5) * 0.35,
-      colour: colours.at(idx % colours.length) || "#fbbf24",
-      rotateDeg: (idx * 47) % 360,
-    };
-  });
+  const stageAnchorStyle: React.CSSProperties =
+    activeBackdropSrc && imageBounds
+      ? {
+          left: `${imageBounds.left}px`,
+          top: `${imageBounds.top}px`,
+          width: `${imageBounds.width}px`,
+          height: `${imageBounds.height}px`,
+        }
+      : {
+          left: 0,
+          top: 0,
+          width: "100vw",
+          height: "100vh",
+        };
 
   return (
     <main
@@ -315,136 +374,114 @@ function DisplayContent() {
         fontFamily: "var(--event-display-font, system-ui, sans-serif)",
         backgroundColor: activeBackdropSrc ? "#09090b" : aesthetics.bgColor || "#09090b",
       }}
-      className={`w-screen h-screen flex flex-col ${horizontalItemsClass} ${verticalAlignClass} px-8 py-6 overflow-hidden select-none relative text-white transition-all duration-500`}
+      className="w-screen h-screen overflow-hidden select-none relative text-white transition-colors duration-500"
     >
-      <style>{`
-        @keyframes toloConfettiFall {
-          0% {
-            transform: translateY(-12vh) rotate(0deg);
-            opacity: 1;
-          }
-          85% {
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(108vh) rotate(720deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
+      <WinnerConfetti active={showConfetti} style={aesthetics.confettiStyle} />
 
-      {/* WINNER REVEAL CSS CONFETTI */}
-      {showConfetti && (
-        <div
-          aria-hidden="true"
-          className="fixed inset-0 overflow-hidden pointer-events-none z-20"
-        >
-          {CONFETTI_PIECES.map((piece) => (
-            <span
-              key={piece.id}
-              style={{
-                left: `${piece.leftPct}%`,
-                backgroundColor: piece.colour,
-                transform: `rotate(${piece.rotateDeg}deg)`,
-                animation: `toloConfettiFall ${piece.durationSec}s ease-in ${piece.delaySec}s forwards`,
-              }}
-              className="absolute top-0 w-2.5 h-4 rounded-xs opacity-0"
-            />
-          ))}
-        </div>
-      )}
-
-      {/* BACKDROP IMAGE + STRETCH / ASPECT RATIO + DYNAMIC BLUR */}
+      {/* BACKDROP LAYER: STRETCH, CONTAIN (ASPECT RATIO), OR ORIGINAL PIXEL SIZE */}
       {activeBackdropSrc ? (
-        <img
-          src={activeBackdropSrc}
-          alt="Event Display Backdrop"
-          style={{
-            objectPosition: bgObjectPosition,
-            filter: aesthetics.bgBlurPx > 0 ? `blur(${aesthetics.bgBlurPx}px)` : "none",
-            transform: aesthetics.bgBlurPx > 0 ? "scale(1.04)" : "scale(1)",
-          }}
-          className={`fixed inset-0 w-screen h-screen ${
-            aesthetics.bgFitMode === "contain" ? "object-contain" : "object-fill"
-          } select-none pointer-events-none z-0 transition-all duration-500 animate-fade-in`}
-        />
-      ) : (
         <div
-          style={{
-            filter: `blur(${Math.max(150, aesthetics.bgBlurPx * 8)}px)`,
-          }}
-          className="absolute w-[40vw] h-[40vw] rounded-full opacity-10 bg-amber-500 top-1/4 left-1/4 animate-pulse pointer-events-none z-0"
-        />
+          className={`fixed inset-0 w-screen h-screen flex flex-col ${imageContainerFlex} overflow-hidden pointer-events-none z-0`}
+        >
+          <img
+            ref={bgImgRef}
+            src={activeBackdropSrc}
+            alt="Event Display Backdrop"
+            onLoad={measureImageBounds}
+            style={{
+              filter: aesthetics.bgBlurPx > 0 ? `blur(${aesthetics.bgBlurPx}px)` : "none",
+              transform: aesthetics.bgBlurPx > 0 ? "scale(1.04)" : "scale(1)",
+            }}
+            className={`${
+              aesthetics.bgFitMode === "stretch"
+                ? "w-screen h-screen object-fill"
+                : aesthetics.bgFitMode === "contain"
+                ? "max-w-screen max-h-screen w-auto h-auto object-contain"
+                : "w-auto h-auto max-w-none max-h-none shrink-0"
+            } select-none pointer-events-none transition-all duration-500 animate-fade-in`}
+          />
+        </div>
+      ) : (
+        aesthetics.bgPulseEnabled && (
+          <div
+            style={{
+              filter: `blur(${Math.max(150, aesthetics.bgBlurPx * 8)}px)`,
+            }}
+            className="absolute w-[40vw] h-[40vw] rounded-full opacity-10 bg-amber-500 top-1/4 left-1/4 animate-pulse pointer-events-none z-0"
+          />
+        )
       )}
 
-      {/* VIEWPORT-CONTAINED OVERLAY DISPLAY CORE */}
+      {/* TEXT POSITIONING STAGE ANCHORED TO BACKGROUND IMAGE BOUNDS */}
       <div
-        className={`w-full max-w-[92vw] max-h-[84vh] rounded-[2.5rem] flex flex-col justify-center px-8 py-10 relative z-10 transition-all duration-500 ${
-          aesthetics.fontBgEnabled
-            ? "border border-white/10 bg-black/45 backdrop-blur-2xl shadow-[0_0_120px_rgba(0,0,0,0.7)]"
-            : "border border-transparent bg-transparent backdrop-blur-none shadow-none"
-        }`}
+        style={stageAnchorStyle}
+        className={`fixed flex flex-col ${textContainerFlex} px-8 py-8 pointer-events-none z-10 transition-all duration-300`}
       >
-        {aesthetics.fontBgEnabled && (
-          <div
-            className={`absolute inset-0 border-2 rounded-[2.5rem] pointer-events-none transition-all duration-500 ${
-              isAnimating
-                ? "border-white/20 shadow-[inset_0_0_60px_rgba(255,255,255,0.03)]"
-                : "border-white/0"
-            }`}
-          />
-        )}
-
         <div
-          className={`w-full max-w-full flex flex-col justify-center gap-4 ${textAlignmentClass}`}
+          className={`w-fit max-w-[92%] max-h-[88%] rounded-[2.5rem] flex flex-col justify-center px-8 py-10 pointer-events-auto transition-all duration-500 ${
+            aesthetics.fontBgEnabled
+              ? "border border-white/10 bg-black/45 backdrop-blur-2xl shadow-[0_0_120px_rgba(0,0,0,0.7)]"
+              : "border border-transparent bg-transparent backdrop-blur-none shadow-none"
+          }`}
         >
-          {/* EXTRA EXCEL LINE (ABOVE) */}
-          {showExtraLine && effectiveSubTextMode === "above" && (
-            <p
-              style={{
-                color: aesthetics.textColor,
-                fontSize: `${Math.min(4.5, Math.max(1.2, aesthetics.themeFontSize * 0.28))}vw`,
-              }}
-              className="font-bold tracking-wide opacity-90 max-w-full break-words whitespace-normal transition-all duration-300"
-            >
-              {winnerExtraText}
-            </p>
+          {aesthetics.fontBgEnabled && (
+            <div
+              className={`absolute inset-0 border-2 rounded-[2.5rem] pointer-events-none transition-all duration-500 ${
+                isAnimating
+                  ? "border-white/20 shadow-[inset_0_0_60px_rgba(255,255,255,0.03)]"
+                  : "border-white/0"
+              }`}
+            />
           )}
 
-          {/* MAIN WINNER DISPLAY */}
-          <div className="max-w-full px-2">
-            <span
-              style={{
-                color: isAnimating ? "#71717a" : aesthetics.textColor,
-                fontFamily: "var(--event-display-font, inherit)",
-                fontSize: `${aesthetics.themeFontSize}vw`,
-              }}
-              className={`block max-w-full break-words whitespace-normal font-black leading-[1.08] tracking-tight transition-all duration-300 transform-gpu ${
-                glitchActive ? "skew-x-12 scale-y-75 blur-[1px] text-red-500" : ""
-              } ${
-                !isAnimating &&
-                aesthetics.themeAnim === "anim-zoom-pop" &&
-                winnerName !== LOCALES[activeLang].awaitingDraw
-                  ? "animate-[ping_0.4s_ease-out_1] scale-100"
-                  : ""
-              } ${isAnimating ? "scale-95 blur-[4px]" : "scale-100"}`}
-            >
-              {displayTarget}
-            </span>
+          <div
+            className={`w-full max-w-full flex flex-col justify-center gap-4 ${textHorizontalAlign}`}
+          >
+            {showExtraLine && effectiveSubTextMode === "above" && (
+              <p
+                style={{
+                  color: aesthetics.textColor,
+                  fontSize: `${Math.min(4.5, Math.max(1.2, aesthetics.themeFontSize * 0.28))}vw`,
+                }}
+                className="font-bold tracking-wide opacity-90 max-w-full break-words whitespace-normal transition-all duration-300"
+              >
+                {winnerExtraText}
+              </p>
+            )}
+
+            <div className="max-w-full px-2">
+              <span
+                style={{
+                  color: isAnimating ? "#71717a" : aesthetics.textColor,
+                  fontFamily: "var(--event-display-font, inherit)",
+                  fontSize: `${aesthetics.themeFontSize}vw`,
+                }}
+                className={`block max-w-full break-words whitespace-normal font-black leading-[1.08] tracking-tight transition-all duration-300 transform-gpu ${
+                  glitchActive ? "skew-x-12 scale-y-75 blur-[1px] text-red-500" : ""
+                } ${
+                  !isAnimating &&
+                  aesthetics.themeAnim === "anim-zoom-pop" &&
+                  winnerName !== LOCALES[activeLang].awaitingDraw
+                    ? "animate-[ping_0.4s_ease-out_1] scale-100"
+                    : ""
+                } ${isAnimating ? "scale-95 blur-[4px]" : "scale-100"}`}
+              >
+                {displayTarget}
+              </span>
+            </div>
+
+            {showExtraLine && effectiveSubTextMode === "below" && (
+              <p
+                style={{
+                  color: aesthetics.textColor,
+                  fontSize: `${Math.min(4.5, Math.max(1.2, aesthetics.themeFontSize * 0.28))}vw`,
+                }}
+                className="font-bold tracking-wide opacity-90 max-w-full break-words whitespace-normal transition-all duration-300"
+              >
+                {winnerExtraText}
+              </p>
+            )}
           </div>
-
-          {/* EXTRA EXCEL LINE (BELOW) */}
-          {showExtraLine && effectiveSubTextMode === "below" && (
-            <p
-              style={{
-                color: aesthetics.textColor,
-                fontSize: `${Math.min(4.5, Math.max(1.2, aesthetics.themeFontSize * 0.28))}vw`,
-              }}
-              className="font-bold tracking-wide opacity-90 max-w-full break-words whitespace-normal transition-all duration-300"
-            >
-              {winnerExtraText}
-            </p>
-          )}
         </div>
       </div>
     </main>
